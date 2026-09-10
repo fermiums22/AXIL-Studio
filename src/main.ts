@@ -115,7 +115,7 @@ function render(): void {
   app.innerHTML = `<div class="studio">
     <header class="connection-header">
       <div class="connection-title"><strong>AXIL Studio</strong><span id="connection-state" role="status">Не подключено</span></div>
-      <form class="unlock-form" id="unlock-form"><label class="visually-hidden" for="access-key">Ключ доступа</label><input id="access-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Ключ доступа" aria-describedby="connection-hint" /><button class="button" id="unlock-device" type="submit">Открыть</button></form>
+      <form class="unlock-form" id="unlock-form" method="post"><input id="access-username" name="username" type="text" value="AXIL Studio" autocomplete="username" readonly hidden /><label class="visually-hidden" for="access-key">Пароль доступа</label><input id="access-key" name="password" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false" placeholder="Пароль доступа" aria-describedby="connection-hint" /><button class="button" id="unlock-device" type="submit">Открыть</button></form>
       <div class="connection-actions"><button class="button" id="connect-ble" type="button">Подключить BLE</button><button class="button" id="connect-uart" type="button">UART</button><button class="text-button" id="disconnect" type="button" hidden>Отключить</button></div>
       <p class="connection-platform" id="platform-status"></p>
       <p class="connection-hint" id="connection-hint"></p>
@@ -269,7 +269,7 @@ function refresh(): void {
   disabled("#connect-uart", !unlocked || !serial || transitioning || active || state.busy || state.updating);
   element("#unlock-form").hidden = unlocked;
   disabled("#unlock-device", state.unlocking);
-  disabled("#access-key", state.unlocking);
+  element<HTMLInputElement>("#access-key").readOnly = state.unlocking;
   text("#unlock-device", state.unlocking ? "Открываем…" : "Открыть");
   element("#connect-uart").hidden = !serial;
   element("#connect-ble").hidden = active;
@@ -279,7 +279,7 @@ function refresh(): void {
   text("#connection-state", active ? `${transport!.kind === "bluetooth" ? "BLE" : "UART"} · подключено` : transport?.state === "disconnecting" ? "Отключение…" : transitioning ? state.deviceSelected ? "Наушники выбраны" : "Выбор устройства…" : "Устройство не выбрано");
   const bluetoothStatus = !window.isSecureContext ? "Bluetooth: нужен HTTPS" : !ble ? "Браузер не поддерживает Bluetooth" : state.bluetoothAvailable === false ? "Bluetooth выключен или недоступен" : "Web Bluetooth доступен";
   text("#platform-status", `${platformName()} · ${bluetoothStatus}`);
-  text("#connection-hint", active || state.deviceSelected ? state.deviceName : !unlocked ? "Введите ключ доступа для подключения. Ключ не сохраняется на этом устройстве." : !window.isSecureContext ? "Для подключения откройте страницу по HTTPS или на localhost." : !ble ? "Этот браузер не предоставляет доступ к BLE. UART доступен, если показана его кнопка." : "Браузер запросит доступ и предложит выбрать наушники.");
+  text("#connection-hint", active || state.deviceSelected ? state.deviceName : !unlocked ? "Введите пароль доступа. Его можно сохранить в менеджере паролей браузера." : !window.isSecureContext ? "Для подключения откройте страницу по HTTPS или на localhost." : !ble ? "Этот браузер не предоставляет доступ к BLE. UART доступен, если показана его кнопка." : "Браузер запросит доступ и предложит выбрать наушники.");
 
   const ht = field("hearThroughEnabled");
   const level = field("hearThroughLevel");
@@ -600,22 +600,36 @@ function openCommandCatalog(): void {
   list.querySelector<HTMLButtonElement>("button")?.focus();
 }
 
+function offerPasswordSave(form: HTMLFormElement): void {
+  const PasswordCredential = (window as Window & {
+    PasswordCredential?: new (form: HTMLFormElement) => Credential;
+  }).PasswordCredential;
+  if (!PasswordCredential || !navigator.credentials?.store) return;
+  try {
+    // Capture the successful form before clearing it; saving remains the browser's choice.
+    void navigator.credentials.store(new PasswordCredential(form)).catch(() => {});
+  } catch {
+    // Browser policy must not prevent access to an already unlocked library.
+  }
+}
+
 function bindEvents(): void {
   element("#unlock-form").addEventListener("submit", event => {
     event.preventDefault();
     if (state.unlocking) return;
     const input = element<HTMLInputElement>("#access-key");
     const key = input.value.trim();
-    input.value = "";
-    if (!key) { message("Введите ключ доступа."); input.focus(); return; }
+    if (!key) { message("Введите пароль доступа."); input.focus(); return; }
+    input.value = key;
     state.unlocking = true;
     message("");
     refresh();
     void unlockDeviceRuntime(key).then(() => {
+      offerPasswordSave(element<HTMLFormElement>("#unlock-form"));
       message("Доступ открыт. Можно подключить наушники.");
     }).catch((error: unknown) => {
       message(error instanceof Error ? error.message : "Не удалось открыть доступ.", true);
-    }).finally(() => { state.unlocking = false; refresh(); });
+    }).finally(() => { input.value = ""; state.unlocking = false; refresh(); });
   });
   element("#connect-ble").addEventListener("click", () => { void connect("bluetooth"); });
   element("#connect-uart").addEventListener("click", () => { void connect("serial"); });
