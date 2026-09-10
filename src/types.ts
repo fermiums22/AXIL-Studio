@@ -1,5 +1,5 @@
 export interface OtaProgress {
-  readonly phase: "handshake" | "transfer" | "verify" | "complete";
+  readonly phase: "handshake" | "transfer" | "waiting" | "verify" | "complete";
   readonly transferred: number;
   readonly total: number;
   readonly percent: number;
@@ -107,6 +107,7 @@ export type TransportEvent =
     }
   | { readonly type: "device"; readonly device: AxilDeviceInfo }
   | { readonly type: "capabilities"; readonly capabilities: TransportCapabilities }
+  | { readonly type: "ota-log"; readonly line: string }
   | {
       readonly type: "line";
       readonly direction: DataDirection;

@@ -11,6 +11,9 @@ const touchAnimations = new Map<Side | "center", Animation[]>();
 let joystickHeld: Direction | undefined;
 const editingRanges = new Set<string>();
 const fieldTimes = new Map<keyof TelemetrySnapshot, number>();
+const consoleLines: string[] = [];
+let consoleCharacters = 0;
+let discardedConsoleLines = 0;
 let transport: AxilTransport | undefined;
 let unsubscribe: (() => void) | undefined;
 let firmwareBytes: Uint8Array | undefined;
@@ -28,6 +31,9 @@ const state = {
   updating: false,
   otaStatus: "idle" as "idle" | "working" | "error" | "complete",
   otaPercent: 0,
+  otaStartedAt: 0,
+  otaElapsedMs: 0,
+  otaTransferred: 0,
   fileLoading: false,
   unlocking: false,
   microphoneRequested: false,
@@ -148,7 +154,7 @@ function render(): void {
               <input class="visually-hidden" id="firmware-file" type="file" accept=".bin" />
               <p class="file-name">Файл не выбран</p>
               <button class="button update-button" id="update-firmware" type="button" disabled><span id="update-label">Update OTA</span><span id="update-arrow" aria-hidden="true">↑</span></button>
-              <div class="ota-progress" id="ota-progress" hidden><span id="ota-progress-label" role="status"></span><button class="text-button" id="cancel-update" type="button">Прервать</button></div>
+              <div class="ota-progress" id="ota-progress" hidden><span id="ota-progress-label" role="status"></span><div id="ota-transfer-metrics" title="Средняя скорость передачи с начала OTA, включая ожидание устройства."></div><button class="text-button" id="cancel-update" type="button">Прервать</button></div>
             </div>
           </div>
         </section>
@@ -156,7 +162,7 @@ function render(): void {
         <p class="capability-note" id="capability-note"></p>
       </section>
       <section class="console-panel" id="console-panel" role="tabpanel" aria-labelledby="console-tab" hidden>
-        <div class="console-heading"><h1>Console</h1><button class="text-button" id="clear-console" type="button">Clear</button></div>
+        <div class="console-heading"><h1>Console</h1><button class="text-button" id="save-console" type="button" title="Сохранить до 5000 строк в текстовый файл" disabled>Сохранить консоль</button><button class="text-button" id="clear-console" type="button">Clear</button></div>
         <p class="console-hint" id="console-hint">Подключите наушники для отправки команд.</p>
         <div id="console-output" class="console-output" role="log" aria-label="Консоль наушников" aria-live="off"><p class="console-empty">Ответы устройства появятся здесь.</p></div>
         <form id="console-form"><div class="command-row"><button class="button command-picker-toggle" id="open-commands" type="button" aria-label="Выбрать команду" title="Список команд" aria-haspopup="dialog" aria-controls="command-dialog" disabled>+</button><label class="visually-hidden" for="console-command">Команда</label><input id="console-command" autocomplete="off" spellcheck="false" placeholder="!status" aria-describedby="selected-command-hint" maxlength="160" disabled /><button class="button" id="send-command" type="submit" disabled>Send</button></div><p class="console-hint command-hint" id="selected-command-hint" hidden></p></form>
@@ -219,11 +225,33 @@ function log(value: string, direction = "·"): void {
   const time = document.createElement("time");
   time.textContent = new Date().toLocaleTimeString("en-GB", { hour12: false });
   const body = document.createElement("span");
-  body.textContent = `${direction} ${value}`;
+  body.textContent = `${direction} ${value.length > 4096 ? `${value.slice(0, 4096)}… [строка сокращена]` : value}`;
+  const plain = `${time.textContent} ${body.textContent}`;
+  consoleLines.push(plain);
+  consoleCharacters += plain.length;
+  while (consoleLines.length > 5000 || consoleCharacters > 1000000) {
+    consoleCharacters -= consoleLines.shift()!.length;
+    discardedConsoleLines++;
+  }
   line.append(time, body);
   output.append(line);
   while (output.childElementCount > 150) output.firstElementChild?.remove();
   if (atEnd) output.scrollTop = output.scrollHeight;
+  disabled("#save-console", false);
+}
+
+function saveConsole(): void {
+  if (!consoleLines.length) return;
+  const date = new Date().toISOString();
+  const header = `AXIL Studio Console\r\nExported UTC: ${date}\r\nConsole timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}\r\nPlatform: ${platformName()}\r\n${discardedConsoleLines ? `Ранних строк удалено: ${discardedConsoleLines}\r\n` : ""}\r\n`;
+  const url = URL.createObjectURL(new Blob(["\ufeff", header, consoleLines.join("\r\n"), "\r\n"], { type: "text/plain;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `AXIL-console-${date.replace(/[:.]/g, "-")}.txt`;
+  link.hidden = true;
+  document.body.append(link);
+  try { link.click(); }
+  finally { link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
 }
 
 function updateRange(id: string, value: number | undefined, available: boolean, max?: number): void {
@@ -359,6 +387,7 @@ function refresh(): void {
   text("#update-label", updateLabel);
   update.setAttribute("aria-label", `Обновление OTA: ${updateLabel}`);
   element("#update-arrow").hidden = state.otaStatus !== "idle";
+  if (state.otaStatus !== "idle") refreshOtaMetrics();
   text("#capability-note", !active ? "Подключение нужно для чтения состояния. OTA использует образ AXIL_OTA.bin." : !state.negotiated ? "Проверяем возможности прошивки…" : !caps?.hearThroughBalance ? "Режим совместимости: доступны только поддерживаемые функции. OTA можно использовать для обновления старой версии." : level === undefined && !state.updating ? "Состояние устройства устарело или ещё не получено. Управление приостановлено." : "");
 }
 
@@ -387,6 +416,7 @@ function receive(event: TransportEvent): void {
     log(`Выбрано устройство: ${event.device.name}`);
   } else if (event.type === "capabilities") state.negotiated = true;
   else if (event.type === "line") log(event.line, event.direction === "tx" ? "→" : "←");
+  else if (event.type === "ota-log") log(event.line);
   else if (event.type === "error") { message(event.error.message, true); log(event.error.message, "!"); }
   else if (event.type === "telemetry") {
     const snapshot = event.snapshot;
@@ -420,6 +450,8 @@ function receive(event: TransportEvent): void {
 
 async function connect(kind: "bluetooth" | "serial"): Promise<void> {
   if (!isDeviceRuntimeUnlocked() || state.connecting || connected() || state.busy || state.updating) return;
+  const label = kind === "bluetooth" ? "BLE" : "UART";
+  log(`${label}: выбор устройства и подключение…`);
   state.connecting = true;
   state.negotiated = false;
   state.telemetry = {};
@@ -440,26 +472,33 @@ async function connect(kind: "bluetooth" | "serial"): Promise<void> {
     refresh();
     await current.connect();
     state.negotiated = true;
+    log(`${label}: подключено, возможности прошивки проверены.`);
   } catch (error) {
-    message(error instanceof Error ? error.message : String(error), true);
+    const detail = error instanceof Error ? error.message : String(error);
+    message(detail, true);
+    log(`${label}: ${detail}`, "!");
   } finally {
     state.connecting = false;
     refresh();
   }
 }
 
-async function command(operation: (current: AxilTransport) => Promise<void>, success = ""): Promise<void> {
+async function command(operation: (current: AxilTransport) => Promise<void>, success = "", action = ""): Promise<void> {
   const current = transport;
   if (!current || !connected() || state.busy || state.updating) return;
   const focused = document.activeElement;
   state.busy = true;
+  if (action) log(`${action}…`);
   message("");
   refresh();
   try {
     await operation(current);
+    if (action) log(`${action}: выполнено.`);
     if (transport === current && success) message(success);
   } catch (error) {
-    if (transport === current) message(error instanceof Error ? error.message : String(error), true);
+    const detail = error instanceof Error ? error.message : String(error);
+    if (transport === current) message(detail, true);
+    log(`${action || "Команда"}: ${detail}`, "!");
   } finally {
     state.busy = false;
     editingRanges.clear();
@@ -488,10 +527,13 @@ async function selectFirmware(): Promise<void> {
     if (selection !== fileSelection) return;
     firmwareBytes = bytes;
     text(".file-name", `${file.name} · ${(file.size / 1024).toFixed(0)} KiB`);
+    log(`OTA: локальная проверка образа пройдена, ${bytes.length} байт.`);
   } catch (error) {
     if (selection === fileSelection) {
       text(".file-name", `${file.name} · неверный образ`);
-      message(error instanceof Error ? error.message : String(error), true);
+      const detail = error instanceof Error ? error.message : String(error);
+      message(detail, true);
+      log(`OTA: образ отклонён до отправки: ${detail}`, "!");
     }
   } finally {
     if (selection === fileSelection) state.fileLoading = false;
@@ -502,13 +544,27 @@ async function selectFirmware(): Promise<void> {
 function resetOtaProgress(): void {
   state.otaStatus = "idle";
   state.otaPercent = 0;
+  state.otaElapsedMs = 0;
+  state.otaTransferred = 0;
   element("#ota-progress").hidden = true;
+}
+
+function refreshOtaMetrics(): void {
+  if (state.updating) state.otaElapsedMs = Math.max(0, performance.now() - state.otaStartedAt);
+  const seconds = Math.floor(state.otaElapsedMs / 1000);
+  const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  const rate = state.otaTransferred > 0 && state.otaElapsedMs >= 1000
+    ? `≈ ${(state.otaTransferred / state.otaElapsedMs * 1000 / 1024).toFixed(1)} КиБ/с`
+    : "скорость —";
+  const value = `${elapsed} · ${rate}`;
+  if (element("#ota-transfer-metrics").textContent !== value) text("#ota-transfer-metrics", value);
 }
 
 function otaProgress(progress: OtaProgress): void {
   if (state.otaStatus !== "working") return;
-  const phase = { handshake: "Подготовка", transfer: "Передача", verify: "Проверка устройством", complete: "Ожидание подтверждения" }[progress.phase];
+  const phase = { handshake: "Подготовка", transfer: "Передача", waiting: "Ожидание следующего блока", verify: "Ожидание подтверждения устройства", complete: "Ожидание подтверждения" }[progress.phase];
   state.otaPercent = Math.max(0, Math.min(99.9, Number.isFinite(progress.percent) ? progress.percent : 0));
+  state.otaTransferred = Math.max(0, Number.isFinite(progress.transferred) ? progress.transferred : 0);
   if (element("#ota-progress-label").textContent !== phase) text("#ota-progress-label", phase);
   refresh();
 }
@@ -520,6 +576,9 @@ async function updateFirmware(): Promise<void> {
   state.updating = true;
   state.otaStatus = "working";
   state.otaPercent = 0;
+  state.otaStartedAt = performance.now();
+  state.otaElapsedMs = 0;
+  state.otaTransferred = 0;
   state.microphoneRequested = false;
   otaAbort = new AbortController();
   element("#ota-progress").hidden = false;
@@ -541,6 +600,7 @@ async function updateFirmware(): Promise<void> {
     text("#ota-progress-label", "Обновление не подтверждено");
     log(`OTA: ${detail}`, "!");
   } finally {
+    refreshOtaMetrics();
     state.updating = false;
     otaAbort = undefined;
     element("#cancel-update").hidden = true;
@@ -633,7 +693,7 @@ function bindEvents(): void {
   });
   element("#connect-ble").addEventListener("click", () => { void connect("bluetooth"); });
   element("#connect-uart").addEventListener("click", () => { void connect("serial"); });
-  element("#disconnect").addEventListener("click", () => { void command(current => current.disconnect()); });
+  element("#disconnect").addEventListener("click", () => { void command(current => current.disconnect(), "", "Отключение"); });
   app.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach(button => {
     button.addEventListener("click", () => selectTab(button.dataset.tab as Tab));
     button.addEventListener("keydown", event => {
@@ -645,7 +705,7 @@ function bindEvents(): void {
   });
   element("#ht-toggle").addEventListener("click", () => {
     const enabled = field("hearThroughEnabled");
-    if (enabled !== undefined) void command(current => current.setHearThroughEnabled(!enabled));
+    if (enabled !== undefined) void command(current => current.setHearThroughEnabled(!enabled), "", `HT ${enabled ? "выключить" : "включить"}`);
   });
   for (const id of ["ht-level", "ht-balance", "music-level"]) {
     const input = element<HTMLInputElement>(`#${id}`);
@@ -660,23 +720,25 @@ function bindEvents(): void {
     });
     input.addEventListener("change", () => {
       const value = Number(input.value);
-      void command(current => id === "ht-level" ? current.setHearThroughLevel(value) : id === "ht-balance" ? setBalance(current, value) : current.setMusicVolume(value));
+      const label = { "ht-level": "HT level", "ht-balance": "HT balance", "music-level": "Music level" }[id];
+      void command(current => id === "ht-level" ? current.setHearThroughLevel(value) : id === "ht-balance" ? setBalance(current, value) : current.setMusicVolume(value), "", `${label}: ${value}`);
     });
     for (const name of ["pointercancel", "blur"]) input.addEventListener(name, () => { if (!state.busy) { editingRanges.delete(id); refresh(); } });
   }
-  element("#reset-balance").addEventListener("click", () => { void command(current => setBalance(current, 0)); });
+  element("#reset-balance").addEventListener("click", () => { void command(current => setBalance(current, 0), "", "Выровнять HT L/R"); });
   element("#microphone-toggle").addEventListener("click", () => {
     const enabled = !state.microphoneRequested;
     void command(async current => {
       await current.setMicrophoneMonitor(enabled);
       state.microphoneRequested = enabled;
-    });
+    }, "", `MEMS MIC ${enabled ? "включить" : "выключить"}`);
   });
-  element("#sleep").addEventListener("click", () => { void command(current => current.sleep(), "Команда Sleep подтверждена. Для следующего подключения может потребоваться включить наушники кнопкой."); });
+  element("#sleep").addEventListener("click", () => { void command(current => current.sleep(), "Команда Sleep подтверждена. Для следующего подключения может потребоваться включить наушники кнопкой.", "Sleep"); });
   element("#firmware-file").addEventListener("change", () => { void selectFirmware(); });
   element("#update-firmware").addEventListener("click", () => { void updateFirmware(); });
-  element("#cancel-update").addEventListener("click", () => { otaAbort?.abort(); message("Прерываем OTA. Не считайте образ установленным до проверки версии."); });
-  element("#clear-console").addEventListener("click", () => { element("#console-output").replaceChildren(); });
+  element("#cancel-update").addEventListener("click", () => { log("OTA: запрошено прерывание."); otaAbort?.abort(); message("Прерываем OTA. Не считайте образ установленным до проверки версии."); });
+  element("#save-console").addEventListener("click", saveConsole);
+  element("#clear-console").addEventListener("click", () => { element("#console-output").replaceChildren(); consoleLines.length = 0; consoleCharacters = 0; discardedConsoleLines = 0; disabled("#save-console", true); });
   element("#open-commands").addEventListener("click", openCommandCatalog);
   element("#close-commands").addEventListener("click", () => element<HTMLDialogElement>("#command-dialog").close());
   element("#command-dialog").addEventListener("click", event => {
