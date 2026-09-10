@@ -5,6 +5,7 @@ dist/
 *.fw
 *.FW
 *.bin
+!src/device-core.bin
 *.log
 *.pem
 *.key

@@ -1,4 +1,7 @@
 import "./styles.css";
+import { WebBluetoothTransport, WebSerialTransport, getConsoleCommands, isDeviceRuntimeUnlocked, unlockDeviceRuntime } from "./transports";
+import { OTA_IMAGE_MAX_SIZE, validateOtaImage } from "./ota";
+import type { AxilTransport, OtaProgress, TelemetrySnapshot, TransportEvent } from "./types";
 
 type Tab = "remote" | "console";
 type Side = "left" | "right";
@@ -6,24 +9,33 @@ type Direction = "up" | "down" | "left" | "right" | "center";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const touchAnimations = new Map<Side | "center", Animation[]>();
 let joystickHeld: Direction | undefined;
-let joystickPressedAt = 0;
-let joystickReleaseTimer: number | undefined;
+const editingRanges = new Set<string>();
+const fieldTimes = new Map<keyof TelemetrySnapshot, number>();
+let transport: AxilTransport | undefined;
+let unsubscribe: (() => void) | undefined;
+let firmwareBytes: Uint8Array | undefined;
+let fileSelection = 0;
+let otaAbort: AbortController | undefined;
+let latestInputs: Partial<TelemetrySnapshot> = {};
+let joystickTapTimer: number | undefined;
+let selectedCommandName = "";
 const state = {
   tab: "remote" as Tab,
-  htEnabled: true,
-  htLevel: 70,
-  balance: 0,
-  musicLevel: 8,
-  charging: true,
+  telemetry: {} as Partial<TelemetrySnapshot>,
+  connecting: false,
+  negotiated: false,
+  busy: false,
+  updating: false,
+  otaStatus: "idle" as "idle" | "working" | "error" | "complete",
+  otaPercent: 0,
+  fileLoading: false,
+  unlocking: false,
+  microphoneRequested: false,
+  deviceSelected: false,
+  bluetoothAvailable: undefined as boolean | undefined,
+  deviceName: "Наушники не подключены",
   file: null as File | null,
-  command: "",
-  message: "",
-  console: [] as { time: string; text: string }[],
 };
-
-function escape(value: string): string {
-  return value.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-}
 
 function powerIcon(): string {
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 3v9M6.3 5.8a8 8 0 1 0 11.4 0"/></svg>';
@@ -31,7 +43,7 @@ function powerIcon(): string {
 
 function earcup(side: Side): string {
   const label = side === "left" ? "L" : "R";
-  return `<button class="earcup-button ${side}" id="sensor-${side}" data-earcup="${side}" type="button" aria-label="${label}: показать касание сенсора">
+  return `<div class="earcup-button ${side}" id="sensor-${side}" role="img" aria-label="${label}: нет данных сенсора">
     <span class="sensor-glow" aria-hidden="true"></span>
     <svg class="earcup-svg" viewBox="0 0 90 116" aria-hidden="true">
       <defs><linearGradient id="earcup-body-${side}" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3d4942"/><stop offset=".5" stop-color="#29332d"/><stop offset="1" stop-color="#202822"/></linearGradient></defs>
@@ -44,7 +56,7 @@ function earcup(side: Side): string {
       <circle cx="45.5" cy="61" r="3" fill="#7b9783"/>
       <circle class="sensor-hit" cx="45.5" cy="61" r="11" fill="#ffab60" fill-opacity=".45" stroke="#ffc28a" stroke-width="1.5"/>
     </svg><span class="earcup-label">${label}</span>
-  </button>`;
+  </div>`;
 }
 
 function pulse(key: Side | "center", glow: Element, marker?: Element): void {
@@ -62,30 +74,28 @@ function pulse(key: Side | "center", glow: Element, marker?: Element): void {
 }
 
 function showTouch(side: Side): void {
-  const button = app.querySelector<HTMLButtonElement>(`#sensor-${side}`);
+  const button = app.querySelector<HTMLElement>(`#sensor-${side}`);
   if (button) pulse(side, button.querySelector(".sensor-glow")!, button.querySelector(".sensor-hit")!);
 }
 
 function joystick(): string {
   const labels: Record<Direction, string> = { up: "Вверх", down: "Вниз", left: "Влево", right: "Вправо", center: "Нажать джойстик" };
-  return `<div class="joystick" role="group" aria-label="Джойстик: нажмите направление или используйте стрелки">
+  return `<div class="joystick" role="img" aria-label="Джойстик: нет данных">
     <span class="sensor-glow" id="joystick-glow" aria-hidden="true"></span><span class="joystick-base" aria-hidden="true"><span id="joystick-cap"></span></span>
-    ${(Object.keys(labels) as Direction[]).map(direction => `<button class="joystick-key ${direction}" data-joystick="${direction}" type="button" aria-label="${labels[direction]}" title="${labels[direction]}">${direction === "center" ? "" : '<span aria-hidden="true"></span>'}</button>`).join("")}
+    ${(Object.keys(labels) as Direction[]).map(direction => `<span class="joystick-key ${direction}" data-joystick="${direction}" aria-hidden="true">${direction === "center" ? "" : '<span></span>'}</span>`).join("")}
   </div>`;
 }
 
 function setJoystickPressed(direction: Direction, pressed: boolean): void {
   const cap = app.querySelector<HTMLElement>("#joystick-cap");
-  const button = app.querySelector<HTMLButtonElement>(`[data-joystick="${direction}"]`);
+  const button = app.querySelector<HTMLElement>(`[data-joystick="${direction}"]`);
   if (!cap || !button) return;
   if (!pressed && joystickHeld !== direction) return;
-  window.clearTimeout(joystickReleaseTimer);
   if (pressed && joystickHeld === direction) return;
   joystickHeld = pressed ? direction : undefined;
   app.querySelectorAll(".joystick-key.is-pressed").forEach(key => key.classList.remove("is-pressed"));
   button.classList.toggle("is-pressed", pressed);
   if (pressed) {
-    joystickPressedAt = performance.now();
     if (direction === "center") pulse("center", app.querySelector("#joystick-glow")!);
   }
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -93,166 +103,600 @@ function setJoystickPressed(direction: Direction, pressed: boolean): void {
   cap.style.transform = pressed && !reduced ? tilt[direction] : "none";
 }
 
-function showJoystick(direction: Direction): void {
-  setJoystickPressed(direction, true);
-  joystickReleaseTimer = window.setTimeout(() => setJoystickPressed(direction, false), 220);
-}
-
-function range(id: string, title: string, min: number, max: number, value: number): string {
+function range(id: string, title: string, min: number, max: number): string {
   return `<section class="control" aria-labelledby="${id}-label">
-    <div class="control-label"><label id="${id}-label" for="${id}">${title}</label><output id="${id}-value" for="${id}">${value}</output></div>
-    <input id="${id}" type="range" min="${min}" max="${max}" step="1" value="${value}" style="--range-fill: ${(value - min) / (max - min) * 100}%" />
-    <div class="range-ends" aria-hidden="true"><span>${min}</span><span>${max}</span></div>
-  </section>`;
-}
-
-function channelLevels(): [number, number] {
-  // A local visual preview of balance, not a headset calibration command.
-  const left = Math.round(state.htLevel * (state.balance > 0 ? 1 - state.balance / 100 : 1));
-  const right = Math.round(state.htLevel * (state.balance < 0 ? 1 + state.balance / 100 : 1));
-  return [left, right];
-}
-
-function remoteTemplate(): string {
-  const [left, right] = channelLevels();
-  return `<section id="remote-panel" role="tabpanel" aria-labelledby="remote-tab">
-    <div class="device-line">
-      <button class="power-button ${state.htEnabled ? "active" : ""}" id="ht-toggle" type="button" aria-label="Hear-through" aria-pressed="${state.htEnabled}">${powerIcon()}</button>
-      <strong class="ht-state">HT ${state.htEnabled ? "enabled" : "disabled"}</strong>
-      <div class="firmware-version"><span>Firmware</span><strong>2.0.0</strong></div>
-    </div>
-    <section class="sensor-preview" aria-label="Input preview"><div class="input-state-row"><div class="sensor-pair">${earcup("left")}${earcup("right")}</div>${joystick()}</div><p>Сенсоры и джойстик · нажмите для примера</p></section>
-    ${range("ht-level", "HT level", 0, 127, state.htLevel)}
-    <section class="control balance-control" aria-labelledby="balance-label">
-      <div class="control-label"><label id="balance-label" for="ht-balance">HT balance</label><output id="ht-balance-value" for="ht-balance">${state.balance}</output></div>
-      <div class="balance-track"><input id="ht-balance" type="range" min="-100" max="100" value="${state.balance}" /></div>
-      <div class="balance-values"><span>L <strong id="left-level">${left} / 128</strong></span><button class="text-button" id="reset-balance" type="button">Reset</button><span>R <strong id="right-level">${right} / 128</strong></span></div>
-    </section>
-    ${range("music-level", "Music level", 0, 16, state.musicLevel)}
-    <section class="lower-controls" aria-label="Meters and firmware">
-      <div class="meters">
-        <div class="meter-block"><span class="meter-label">MIC</span><div class="meter-rail microphone" role="meter" aria-label="Demo microphone level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="65"><span style="--level: 65%"></span></div><span class="meter-unit">Level</span></div>
-        <div class="meter-block"><button class="meter-label charging-label ${state.charging ? "active" : ""}" id="charging-toggle" type="button" aria-pressed="${state.charging}" aria-label="Зарядка: ${state.charging ? "подключена" : "отключена"}. Переключить макет" title="Макет: переключить подключение зарядки">Battery<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M7 2v4m6-4v4M5 6h10v3a5 5 0 0 1-5 5v4M5 9h10"/></svg></button><div class="meter-rail battery" role="meter" aria-label="Demo battery level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="80"><span style="--level: 80%"></span>${state.charging ? '<svg id="battery-bolt" viewBox="0 0 16 28" aria-hidden="true"><path d="M9 1 2 15h5l-1 12 8-16H9Z"/></svg>' : ""}</div><strong class="meter-reading">80%</strong></div>
-      </div>
-      <div class="device-actions">
-        <button class="button sleep-button" id="sleep" type="button"><span aria-hidden="true">☾</span> Sleep</button>
-        <div class="update-controls">
-          <label class="file-button" for="firmware-file">Choose firmware <span aria-hidden="true">＋</span></label>
-          <input class="visually-hidden" id="firmware-file" type="file" accept=".bin,.fw,.FW" />
-          <p class="file-name" title="${escape(state.file?.name ?? "")}">${escape(state.file?.name ?? "No file selected")}</p>
-          <button class="button update-button" id="update-firmware" type="button" ${state.file ? "" : "disabled"}>Update<span aria-hidden="true">↑</span></button>
-        </div>
-      </div>
-    </section>
-  </section>`;
-}
-
-function consoleTemplate(): string {
-  return `<section class="console-panel" id="console-panel" role="tabpanel" aria-labelledby="console-tab">
-    <div class="console-heading"><h1>Console</h1><button class="text-button" id="clear-console" type="button">Clear</button></div>
-    <div id="console-output" class="console-output" role="log" aria-label="Local console preview" aria-live="polite">${state.console.length ? state.console.map(entry => `<div class="log-line"><time>${entry.time}</time><span>${escape(entry.text)}</span></div>`).join("") : '<p class="console-empty">Макет консоли. Подключение добавим следующим шагом.</p>'}</div>
-    <form id="console-form"><div class="command-row"><label class="visually-hidden" for="console-command">Command</label><input id="console-command" autocomplete="off" spellcheck="false" value="${escape(state.command)}" placeholder="Введите команду…" /><button class="button" type="submit">Send</button></div></form>
+    <div class="control-label"><label id="${id}-label" for="${id}">${title}</label><output id="${id}-value" for="${id}">—</output></div>
+    <input id="${id}" type="range" min="${min}" max="${max}" step="1" value="${min}" disabled />
+    <div class="range-ends" aria-hidden="true"><span>${min}</span><span id="${id}-max">${max}</span></div>
   </section>`;
 }
 
 function render(): void {
-  touchAnimations.forEach(animations => animations.forEach(animation => animation.cancel()));
-  touchAnimations.clear();
-  joystickHeld = undefined; window.clearTimeout(joystickReleaseTimer);
   app.innerHTML = `<div class="studio">
-    <header class="prototype-note"><span>Макет</span><p>Демонстрационные значения</p></header>
-    <main>${state.tab === "remote" ? remoteTemplate() : consoleTemplate()}</main>
-    <p class="notice" id="notice" role="status" ${state.message ? "" : "hidden"}>${escape(state.message)}</p>
-    <nav class="tabs" role="tablist" aria-label="Page"><button id="remote-tab" type="button" role="tab" data-tab="remote" aria-selected="${state.tab === "remote"}" aria-controls="remote-panel" tabindex="${state.tab === "remote" ? 0 : -1}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14M9 3v6M15 9v6M9 15v6"/></svg>Remote</button><button id="console-tab" type="button" role="tab" data-tab="console" aria-selected="${state.tab === "console"}" aria-controls="console-panel" tabindex="${state.tab === "console" ? 0 : -1}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m5 6 6 6-6 6M13 18h6"/></svg>Console</button></nav>
+    <header class="connection-header">
+      <div class="connection-title"><strong>AXIL Studio</strong><span id="connection-state" role="status">Не подключено</span></div>
+      <form class="unlock-form" id="unlock-form"><label class="visually-hidden" for="access-key">Ключ доступа</label><input id="access-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Ключ доступа" aria-describedby="connection-hint" /><button class="button" id="unlock-device" type="submit">Открыть</button></form>
+      <div class="connection-actions"><button class="button" id="connect-ble" type="button">Подключить BLE</button><button class="button" id="connect-uart" type="button">UART</button><button class="text-button" id="disconnect" type="button" hidden>Отключить</button></div>
+      <p class="connection-platform" id="platform-status"></p>
+      <p class="connection-hint" id="connection-hint"></p>
+    </header>
+    <main>
+      <section id="remote-panel" role="tabpanel" aria-labelledby="remote-tab">
+        <div class="device-line">
+          <button class="power-button" id="ht-toggle" type="button" aria-label="Hear-through" disabled>${powerIcon()}</button>
+          <strong class="ht-state">HT —</strong>
+          <div class="firmware-version"><span>Firmware</span><strong id="firmware-version">—</strong></div>
+        </div>
+        <section class="sensor-preview" aria-label="Органы управления наушников"><div class="input-state-row"><div class="sensor-pair">${earcup("left")}${earcup("right")}</div>${joystick()}</div><p id="input-status">Сенсоры и джойстик · нет данных</p></section>
+        ${range("ht-level", "HT level", 0, 5)}
+        <section class="control balance-control" aria-labelledby="balance-label">
+          <div class="control-label"><label id="balance-label" for="ht-balance">HT balance</label><output id="ht-balance-value" for="ht-balance">—</output></div>
+          <div class="balance-track"><input id="ht-balance" type="range" min="-127" max="127" value="0" disabled /></div>
+          <div class="balance-values"><span>L <strong id="left-level">— / 127</strong></span><button class="text-button" id="reset-balance" type="button" title="Выровнять L/R" disabled>Reset</button><span>R <strong id="right-level">— / 127</strong></span></div>
+          <p class="balance-note" id="balance-note" hidden></p>
+        </section>
+        ${range("music-level", "Music level", 0, 16)}
+        <section class="lower-controls" aria-label="Уровни и обновление">
+          <div class="meters">
+            <div class="meter-block"><button class="meter-label microphone-toggle" id="microphone-toggle" type="button" aria-label="Включить измерение MEMS" aria-describedby="microphone-warning" title="Диагностика MEMS приостанавливает музыку" aria-pressed="false" disabled>MEMS MIC</button><div id="microphone-meter" class="meter-rail microphone" role="meter" aria-label="Уровень MEMS: нет данных" aria-valuemin="-60" aria-valuemax="0"><span></span></div><strong class="meter-reading" id="microphone-reading">—</strong><span class="meter-unit" id="microphone-note">Нет данных</span></div>
+            <div class="meter-block"><span class="meter-label charging-label" id="charging-state" title="Зарядка: нет данных">Battery<svg id="charger-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M7 2v4m6-4v4M5 6h10v3a5 5 0 0 1-5 5v4M5 9h10"/></svg></span><div id="battery-meter" class="meter-rail battery" role="meter" aria-label="Заряд батареи: нет данных" aria-valuemin="0" aria-valuemax="100"><span></span><svg id="battery-bolt" viewBox="0 0 16 28" aria-hidden="true" hidden><path d="M9 1 2 15h5l-1 12 8-16H9Z"/></svg></div><strong class="meter-reading" id="battery-reading">—</strong><span class="meter-unit" id="charge-description">Нет данных</span></div>
+          </div>
+          <div class="device-actions">
+            <button class="button sleep-button" id="sleep" type="button" disabled><span aria-hidden="true">☾</span> Sleep</button>
+            <div class="update-controls">
+              <label class="file-button" for="firmware-file">Choose firmware <span aria-hidden="true">＋</span></label>
+              <input class="visually-hidden" id="firmware-file" type="file" accept=".bin" />
+              <p class="file-name">Файл не выбран</p>
+              <button class="button update-button" id="update-firmware" type="button" disabled><span id="update-label">Update OTA</span><span id="update-arrow" aria-hidden="true">↑</span></button>
+              <div class="ota-progress" id="ota-progress" hidden><span id="ota-progress-label" role="status"></span><button class="text-button" id="cancel-update" type="button">Прервать</button></div>
+            </div>
+          </div>
+        </section>
+        <p class="capability-note" id="microphone-warning" hidden>Диагностика MEMS приостанавливает музыку.</p>
+        <p class="capability-note" id="capability-note"></p>
+      </section>
+      <section class="console-panel" id="console-panel" role="tabpanel" aria-labelledby="console-tab" hidden>
+        <div class="console-heading"><h1>Console</h1><button class="text-button" id="clear-console" type="button">Clear</button></div>
+        <p class="console-hint" id="console-hint">Подключите наушники для отправки команд.</p>
+        <div id="console-output" class="console-output" role="log" aria-label="Консоль наушников" aria-live="off"><p class="console-empty">Ответы устройства появятся здесь.</p></div>
+        <form id="console-form"><div class="command-row"><button class="button command-picker-toggle" id="open-commands" type="button" aria-label="Выбрать команду" title="Список команд" aria-haspopup="dialog" aria-controls="command-dialog" disabled>+</button><label class="visually-hidden" for="console-command">Команда</label><input id="console-command" autocomplete="off" spellcheck="false" placeholder="!status" aria-describedby="selected-command-hint" maxlength="160" disabled /><button class="button" id="send-command" type="submit" disabled>Send</button></div><p class="console-hint command-hint" id="selected-command-hint" hidden></p></form>
+      </section>
+    </main>
+    <dialog class="command-dialog" id="command-dialog" aria-labelledby="command-dialog-title"><div class="command-dialog-heading"><h2 id="command-dialog-title">Команды</h2><button class="text-button" id="close-commands" type="button" aria-label="Закрыть список команд">×</button></div><p class="console-hint">Выбор подставляет команду. Отправка — кнопкой Send.</p><div class="command-list" id="command-list"></div></dialog>
+    <p class="notice" id="notice" role="status" hidden></p>
+    <nav class="tabs" role="tablist" aria-label="Page"><button id="remote-tab" type="button" role="tab" data-tab="remote" aria-selected="true" aria-controls="remote-panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14M9 3v6M15 9v6M9 15v6"/></svg>Remote</button><button id="console-tab" type="button" role="tab" data-tab="console" aria-selected="false" aria-controls="console-panel" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m5 6 6 6-6 6M13 18h6"/></svg>Console</button></nav>
   </div>`;
   bindEvents();
-  const output = app.querySelector("#console-output");
-  if (output) output.scrollTop = output.scrollHeight;
+  refresh();
 }
 
-function message(text: string): void {
-  state.message = text;
-  const notice = app.querySelector<HTMLElement>("#notice");
-  if (notice) { notice.textContent = text; notice.hidden = false; }
+function element<T extends HTMLElement = HTMLElement>(selector: string): T {
+  return app.querySelector<T>(selector)!;
+}
+
+function text(selector: string, value: string): void { element(selector).textContent = value; }
+function disabled(selector: string, value: boolean): void {
+  element<HTMLButtonElement | HTMLInputElement>(selector).disabled = value;
+}
+function connected(): boolean { return transport?.state === "connected"; }
+
+function platformName(): string {
+  const agent = navigator.userAgent;
+  if (/Android/i.test(agent)) return "Android";
+  if (/iPhone|iPod/i.test(agent)) return "iPhone";
+  if (/iPad/i.test(agent) || /Mac/i.test(navigator.platform) && navigator.maxTouchPoints > 1) return "iPad";
+  if (/Windows/i.test(agent) || /Win/i.test(navigator.platform)) return "Windows";
+  if (/Mac/i.test(navigator.platform)) return "macOS";
+  return "Это устройство";
+}
+
+async function refreshBluetoothAvailability(): Promise<void> {
+  const bluetooth = (navigator as Navigator & { bluetooth?: { getAvailability?: () => Promise<boolean> } }).bluetooth;
+  if (!window.isSecureContext || !bluetooth?.getAvailability) return;
+  try { state.bluetoothAvailable = await bluetooth.getAvailability(); }
+  catch { state.bluetoothAvailable = undefined; }
+  refresh();
+}
+
+function field<K extends keyof TelemetrySnapshot>(key: K, maxAge = 8000): TelemetrySnapshot[K] | undefined {
+  if (!connected() || performance.now() - (fieldTimes.get(key) ?? -Infinity) > maxAge) return undefined;
+  return state.telemetry[key];
+}
+
+function message(value: string, error = false): void {
+  const notice = element("#notice");
+  notice.textContent = value;
+  notice.hidden = !value;
+  notice.classList.toggle("error", error);
+}
+
+function log(value: string, direction = "·"): void {
+  const output = element("#console-output");
+  const atEnd = output.scrollHeight - output.scrollTop - output.clientHeight < 30;
+  output.querySelector(".console-empty")?.remove();
+  const line = document.createElement("div");
+  line.className = "log-line";
+  const time = document.createElement("time");
+  time.textContent = new Date().toLocaleTimeString("en-GB", { hour12: false });
+  const body = document.createElement("span");
+  body.textContent = `${direction} ${value}`;
+  line.append(time, body);
+  output.append(line);
+  while (output.childElementCount > 150) output.firstElementChild?.remove();
+  if (atEnd) output.scrollTop = output.scrollHeight;
+}
+
+function updateRange(id: string, value: number | undefined, available: boolean, max?: number): void {
+  const input = element<HTMLInputElement>(`#${id}`);
+  input.disabled = !available;
+  if (!available && !state.busy) editingRanges.delete(id);
+  if (max !== undefined) {
+    input.max = String(max);
+    const endpoint = app.querySelector(`#${id}-max`);
+    if (endpoint) endpoint.textContent = String(max);
+  }
+  if (editingRanges.has(id) && (available || state.busy)) return;
+  input.value = String(value ?? (id === "ht-balance" ? 0 : Number(input.min)));
+  text(`#${id}-value`, value === undefined ? "—" : String(value));
+  const fill = value === undefined ? 0 : (value - Number(input.min)) / (Number(input.max) - Number(input.min)) * 100;
+  input.style.setProperty("--range-fill", `${fill}%`);
+}
+
+function balanceValue(): number | undefined {
+  const left = field("hearThroughLeftLevel"), right = field("hearThroughRightLevel");
+  if (left === undefined || right === undefined || Math.max(left, right) === 0) return undefined;
+  return Math.round(left <= right ? 127 * (1 - left / right) : -127 * (1 - right / left));
+}
+
+async function setBalance(current: AxilTransport, value: number): Promise<void> {
+  const actualLeft = field("hearThroughLeftLevel"), actualRight = field("hearThroughRightLevel");
+  if (actualLeft === undefined || actualRight === undefined || Math.max(actualLeft, actualRight) === 0) throw new Error("Ненулевые уровни L/R ещё не получены.");
+  const reference = Math.max(actualLeft, actualRight);
+  const left = Math.round(reference * (127 - Math.max(0, value)) / 127);
+  const right = Math.round(reference * (127 + Math.min(0, value)) / 127);
+  await current.setHearThroughBalance(left, right);
+}
+
+function refresh(): void {
+  const active = connected();
+  const unlocked = isDeviceRuntimeUnlocked();
+  const caps = transport?.capabilities;
+  const free = active && !state.busy && !state.updating;
+  const transitioning = state.connecting || transport?.state === "connecting" || transport?.state === "disconnecting";
+  const ble = window.isSecureContext && "bluetooth" in navigator;
+  const serial = window.isSecureContext && "serial" in navigator;
+  disabled("#connect-ble", !unlocked || !ble || transitioning || active || state.busy || state.updating);
+  disabled("#connect-uart", !unlocked || !serial || transitioning || active || state.busy || state.updating);
+  element("#unlock-form").hidden = unlocked;
+  disabled("#unlock-device", state.unlocking);
+  disabled("#access-key", state.unlocking);
+  text("#unlock-device", state.unlocking ? "Открываем…" : "Открыть");
+  element("#connect-uart").hidden = !serial;
+  element("#connect-ble").hidden = active;
+  if (active) element("#connect-uart").hidden = true;
+  element("#disconnect").hidden = !active;
+  disabled("#disconnect", state.updating || state.busy);
+  text("#connection-state", active ? `${transport!.kind === "bluetooth" ? "BLE" : "UART"} · подключено` : transport?.state === "disconnecting" ? "Отключение…" : transitioning ? state.deviceSelected ? "Наушники выбраны" : "Выбор устройства…" : "Устройство не выбрано");
+  const bluetoothStatus = !window.isSecureContext ? "Bluetooth: нужен HTTPS" : !ble ? "Браузер не поддерживает Bluetooth" : state.bluetoothAvailable === false ? "Bluetooth выключен или недоступен" : "Web Bluetooth доступен";
+  text("#platform-status", `${platformName()} · ${bluetoothStatus}`);
+  text("#connection-hint", active || state.deviceSelected ? state.deviceName : !unlocked ? "Введите ключ доступа для подключения. Ключ не сохраняется на этом устройстве." : !window.isSecureContext ? "Для подключения откройте страницу по HTTPS или на localhost." : !ble ? "Этот браузер не предоставляет доступ к BLE. UART доступен, если показана его кнопка." : "Браузер запросит доступ и предложит выбрать наушники.");
+
+  const ht = field("hearThroughEnabled");
+  const level = field("hearThroughLevel");
+  const balance = balanceValue();
+  const volume = field("volume");
+  const volumeMax = field("volumeMax") ?? caps?.musicVolumeMax ?? 16;
+  text("#firmware-version", field("firmwareVersion", Infinity) ?? "—");
+  text(".ht-state", ht === undefined ? "HT —" : ht ? "HT enabled" : "HT disabled");
+  const toggle = element("#ht-toggle");
+  toggle.classList.toggle("active", ht === true);
+  if (ht === undefined) toggle.removeAttribute("aria-pressed");
+  else toggle.setAttribute("aria-pressed", String(ht));
+  disabled("#ht-toggle", !(free && caps?.hearThroughEnabled && ht !== undefined));
+  updateRange("ht-level", level, !!(free && caps?.hearThroughLevel && ht === true && level !== undefined), caps?.hearThroughLevelMax ?? 5);
+  updateRange("ht-balance", balance, !!(free && caps?.hearThroughBalance && balance !== undefined));
+  updateRange("music-level", volume, !!(free && caps?.musicVolume && volume !== undefined), volumeMax);
+  text("#left-level", `${field("hearThroughLeftLevel") ?? "—"} / 127`);
+  text("#right-level", `${field("hearThroughRightLevel") ?? "—"} / 127`);
+  const silentPair = field("hearThroughLeftLevel") === 0 && field("hearThroughRightLevel") === 0;
+  element("#balance-note").hidden = !silentPair;
+  text("#balance-note", "Оба уровня L/R равны нулю. Для баланса задайте ненулевую пару через консоль: !balance L R.");
+  disabled("#reset-balance", !(free && caps?.hearThroughBalance && balance !== undefined));
+  disabled("#sleep", !(free && caps?.sleep && level !== undefined));
+
+  const battery = field("batteryPercent");
+  const batteryMeter = element("#battery-meter");
+  batteryMeter.querySelector<HTMLElement>("span")!.style.setProperty("--level", `${battery ?? 0}%`);
+  text("#battery-reading", battery === undefined ? "—" : `${battery}%`);
+  batteryMeter.setAttribute("aria-label", battery === undefined ? "Заряд батареи: нет данных" : "Заряд батареи");
+  if (battery === undefined) batteryMeter.removeAttribute("aria-valuenow");
+  else batteryMeter.setAttribute("aria-valuenow", String(battery));
+  const charge = field("dc5vPresent");
+  const chargeLabel = charge === undefined ? "Нет данных" : charge ? "Подключена" : "Без зарядки";
+  element("#charging-state").classList.toggle("active", charge === true);
+  element("#charging-state").title = `Зарядка: ${chargeLabel.toLowerCase()}`;
+  element("#battery-bolt").toggleAttribute("hidden", charge !== true);
+  text("#charge-description", chargeLabel);
+
+  const microphoneAge = (field("microphoneAgeMs", 500) ?? Infinity) + performance.now() - (fieldTimes.get("microphoneAgeMs") ?? 0);
+  const mic = field("microphoneValid", 500) === true && microphoneAge <= 500 ? field("microphoneAmbientDbfs", 500) : undefined;
+  const micMeter = element("#microphone-meter");
+  micMeter.querySelector<HTMLElement>("span")!.style.setProperty("--level", `${mic === undefined ? 0 : Math.max(0, Math.min(100, (mic + 60) / 60 * 100))}%`);
+  text("#microphone-reading", mic === undefined ? "—" : `${Math.round(mic)}`);
+  text("#microphone-note", mic === undefined ? active && !caps?.microphone ? "Недоступен" : state.microphoneRequested ? "Нет сэмплов" : "Нажмите MIC" : "dBFS · mono");
+  disabled("#microphone-toggle", !(free && caps?.microphone));
+  element("#microphone-warning").hidden = !(active && caps?.microphone);
+  element("#microphone-toggle").setAttribute("aria-pressed", String(state.microphoneRequested));
+  element("#microphone-toggle").setAttribute("aria-label", state.microphoneRequested ? "Выключить измерение MEMS" : "Включить измерение MEMS");
+  micMeter.setAttribute("aria-label", mic === undefined ? "Уровень MEMS: нет данных" : "Уровень MEMS, dBFS");
+  if (mic === undefined) micMeter.removeAttribute("aria-valuenow");
+  else micMeter.setAttribute("aria-valuenow", String(Math.max(-60, Math.min(0, mic))));
+
+  const inputsFresh = !!caps?.inputs && field("inputSequence", 3000) !== undefined;
+  text("#input-status", inputsFresh ? "Сенсоры и джойстик · состояние наушников" : active && !caps?.inputs ? "Сенсоры и джойстик · нужны новые интерфейсы прошивки" : "Сенсоры и джойстик · нет данных");
+  if (!inputsFresh) {
+    if (joystickHeld) setJoystickPressed(joystickHeld, false);
+    element(".joystick").setAttribute("aria-label", "Джойстик: нет данных");
+    element("#sensor-left").setAttribute("aria-label", "L: нет данных сенсора");
+    element("#sensor-right").setAttribute("aria-label", "R: нет данных сенсора");
+  }
+  const consoleReady = !!(free && caps?.engineeringConsole);
+  disabled("#console-command", !consoleReady);
+  disabled("#send-command", !consoleReady);
+  const catalogAvailable = consoleReady && transport && getConsoleCommands(transport.kind, caps).some(item => item.available);
+  disabled("#open-commands", !catalogAvailable);
+  if (!catalogAvailable) element<HTMLDialogElement>("#command-dialog").close();
+  text("#console-hint", state.updating ? "Во время OTA команды приостановлены." : !active ? "Подключите наушники для отправки команд." : !caps?.engineeringConsole ? "Эта прошивка не поддерживает консоль по выбранному подключению." : "Команды отправляются на устройство. Например: !help, !status.");
+  disabled("#firmware-file", !unlocked || state.updating || state.fileLoading);
+  element(".file-button").classList.toggle("disabled", !unlocked || state.updating || state.fileLoading);
+  disabled("#update-firmware", !(free && caps?.ota && firmwareBytes && !state.fileLoading) || state.otaStatus === "complete");
+  const update = element("#update-firmware");
+  update.classList.toggle("is-updating", state.otaStatus === "working");
+  update.classList.toggle("is-complete", state.otaStatus === "complete");
+  update.classList.toggle("is-error", state.otaStatus === "error");
+  update.style.setProperty("--ota-progress", String(state.otaPercent / 100));
+  const updateLabel = state.otaStatus === "error" ? "Error" : state.otaStatus === "complete" ? "100%" : state.otaStatus === "working" ? `${state.otaPercent.toFixed(1).replace(/\.0$/, "")}%` : "Update OTA";
+  text("#update-label", updateLabel);
+  update.setAttribute("aria-label", `Обновление OTA: ${updateLabel}`);
+  element("#update-arrow").hidden = state.otaStatus !== "idle";
+  text("#capability-note", !active ? "Подключение нужно для чтения состояния. OTA использует образ AXIL_OTA.bin." : !state.negotiated ? "Проверяем возможности прошивки…" : !caps?.hearThroughBalance ? "Режим совместимости: доступны только поддерживаемые функции. OTA можно использовать для обновления старой версии." : level === undefined && !state.updating ? "Состояние устройства устарело или ещё не получено. Управление приостановлено." : "");
+}
+
+function receive(event: TransportEvent): void {
+  if (event.type === "state") {
+    if (event.state === "disconnected" || event.state === "error") {
+      state.telemetry = {};
+      fieldTimes.clear();
+      latestInputs = {};
+      state.microphoneRequested = false;
+      state.deviceSelected = false;
+      editingRanges.clear();
+      selectedCommandName = "";
+      element("#selected-command-hint").hidden = true;
+      touchAnimations.forEach(animations => animations.forEach(animation => animation.cancel()));
+      touchAnimations.clear();
+      if (joystickHeld) setJoystickPressed(joystickHeld, false);
+      window.clearTimeout(joystickTapTimer);
+      log("Соединение закрыто.");
+      if (state.updating) message("Связь прервана во время OTA. Результат обновления не подтверждён.", true);
+      if (state.updating) state.otaStatus = "error";
+    }
+  } else if (event.type === "device") {
+    state.deviceName = event.device.name;
+    state.deviceSelected = true;
+    log(`Выбрано устройство: ${event.device.name}`);
+  } else if (event.type === "capabilities") state.negotiated = true;
+  else if (event.type === "line") log(event.line, event.direction === "tx" ? "→" : "←");
+  else if (event.type === "error") { message(event.error.message, true); log(event.error.message, "!"); }
+  else if (event.type === "telemetry") {
+    const snapshot = event.snapshot;
+    for (const key of Object.keys(snapshot) as (keyof TelemetrySnapshot)[]) {
+      if (snapshot[key] !== undefined) fieldTimes.set(key, performance.now());
+    }
+    state.telemetry = { ...state.telemetry, ...Object.fromEntries(Object.entries(snapshot).filter(([, value]) => value !== undefined)) };
+    const pressed = snapshot.inputSequence !== latestInputs.inputSequence ? snapshot.inputPressed ?? [] : [];
+    if (pressed.includes("touchLeft") || snapshot.touchLeft && !latestInputs.touchLeft) showTouch("left");
+    if (pressed.includes("touchRight") || snapshot.touchRight && !latestInputs.touchRight) showTouch("right");
+    if (snapshot.joystickDirection !== undefined) {
+      const direction = snapshot.joystickDirection;
+      window.clearTimeout(joystickTapTimer);
+      if (joystickHeld && joystickHeld !== direction) setJoystickPressed(joystickHeld, false);
+      if (direction !== "none") setJoystickPressed(direction, true);
+      else {
+        const tap = pressed.find((input): input is Direction => input !== "touchLeft" && input !== "touchRight");
+        if (tap) {
+          setJoystickPressed(tap, true);
+          joystickTapTimer = window.setTimeout(() => setJoystickPressed(tap, false), 220);
+        }
+      }
+      element(".joystick").setAttribute("aria-label", direction === "none" ? "Джойстик: отпущен" : `Джойстик: ${direction}`);
+    }
+    if (snapshot.touchLeft !== undefined) element("#sensor-left").setAttribute("aria-label", `L: ${snapshot.touchLeft ? "касание" : "отпущен"}`);
+    if (snapshot.touchRight !== undefined) element("#sensor-right").setAttribute("aria-label", `R: ${snapshot.touchRight ? "касание" : "отпущен"}`);
+    latestInputs = { ...latestInputs, ...Object.fromEntries(Object.entries(snapshot).filter(([, value]) => value !== undefined)) };
+  }
+  refresh();
+}
+
+async function connect(kind: "bluetooth" | "serial"): Promise<void> {
+  if (!isDeviceRuntimeUnlocked() || state.connecting || connected() || state.busy || state.updating) return;
+  state.connecting = true;
+  state.negotiated = false;
+  state.telemetry = {};
+  fieldTimes.clear();
+  latestInputs = {};
+  state.microphoneRequested = false;
+  state.deviceSelected = false;
+  resetOtaProgress();
+  message("");
+  unsubscribe?.();
+  const previous = transport;
+  transport = undefined;
+  try {
+    if (previous) await previous.disconnect();
+    const current = kind === "bluetooth" ? new WebBluetoothTransport() : new WebSerialTransport();
+    transport = current;
+    unsubscribe = current.on(event => { if (transport === current) receive(event); });
+    refresh();
+    await current.connect();
+    state.negotiated = true;
+  } catch (error) {
+    message(error instanceof Error ? error.message : String(error), true);
+  } finally {
+    state.connecting = false;
+    refresh();
+  }
+}
+
+async function command(operation: (current: AxilTransport) => Promise<void>, success = ""): Promise<void> {
+  const current = transport;
+  if (!current || !connected() || state.busy || state.updating) return;
+  const focused = document.activeElement;
+  state.busy = true;
+  message("");
+  refresh();
+  try {
+    await operation(current);
+    if (transport === current && success) message(success);
+  } catch (error) {
+    if (transport === current) message(error instanceof Error ? error.message : String(error), true);
+  } finally {
+    state.busy = false;
+    editingRanges.clear();
+    refresh();
+    if (focused instanceof HTMLElement && document.activeElement === document.body && focused.offsetParent && !focused.matches(":disabled")) focused.focus({ preventScroll: true });
+  }
+}
+
+async function selectFirmware(): Promise<void> {
+  if (!isDeviceRuntimeUnlocked() || state.updating) return;
+  resetOtaProgress();
+  const selection = ++fileSelection;
+  const file = element<HTMLInputElement>("#firmware-file").files?.item(0) ?? null;
+  state.file = file;
+  firmwareBytes = undefined;
+  state.fileLoading = !!file;
+  text(".file-name", file ? `${file.name} · проверка…` : "Файл не выбран");
+  element(".file-name").title = file?.name ?? "";
+  message("");
+  refresh();
+  if (!file) return;
+  try {
+    if (file.size > OTA_IMAGE_MAX_SIZE) throw new Error(`Образ OTA слишком большой: максимум ${OTA_IMAGE_MAX_SIZE / 1024 / 1024} MiB.`);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    validateOtaImage(bytes);
+    if (selection !== fileSelection) return;
+    firmwareBytes = bytes;
+    text(".file-name", `${file.name} · ${(file.size / 1024).toFixed(0)} KiB`);
+  } catch (error) {
+    if (selection === fileSelection) {
+      text(".file-name", `${file.name} · неверный образ`);
+      message(error instanceof Error ? error.message : String(error), true);
+    }
+  } finally {
+    if (selection === fileSelection) state.fileLoading = false;
+    refresh();
+  }
+}
+
+function resetOtaProgress(): void {
+  state.otaStatus = "idle";
+  state.otaPercent = 0;
+  element("#ota-progress").hidden = true;
+}
+
+function otaProgress(progress: OtaProgress): void {
+  if (state.otaStatus !== "working") return;
+  const phase = { handshake: "Подготовка", transfer: "Передача", verify: "Проверка устройством", complete: "Ожидание подтверждения" }[progress.phase];
+  state.otaPercent = Math.max(0, Math.min(99.9, Number.isFinite(progress.percent) ? progress.percent : 0));
+  if (element("#ota-progress-label").textContent !== phase) text("#ota-progress-label", phase);
+  refresh();
+}
+
+async function updateFirmware(): Promise<void> {
+  const current = transport;
+  const bytes = firmwareBytes;
+  if (!current || !connected() || !current.capabilities.ota || !bytes || state.busy || state.updating) return;
+  state.updating = true;
+  state.otaStatus = "working";
+  state.otaPercent = 0;
+  state.microphoneRequested = false;
+  otaAbort = new AbortController();
+  element("#ota-progress").hidden = false;
+  element("#cancel-update").hidden = false;
+  otaProgress({ phase: "handshake", transferred: 0, total: bytes.length, percent: 0 });
+  message("Не выключайте наушники. После передачи нужно проверить перезапуск и версию.");
+  refresh();
+  try {
+    await current.updateFirmware(bytes, otaProgress, otaAbort.signal);
+    state.otaStatus = "complete";
+    state.otaPercent = 100;
+    text("#ota-progress-label", "Образ принят устройством");
+    message("Устройство подтвердило приём образа. Переподключите наушники и проверьте версию после перезапуска.");
+    log("OTA: устройство подтвердило образ; новая версия ещё не проверена.");
+  } catch (error) {
+    state.otaStatus = "error";
+    const detail = error instanceof Error ? error.message : String(error);
+    message(`OTA не завершено: ${detail}`, true);
+    text("#ota-progress-label", "Обновление не подтверждено");
+    log(`OTA: ${detail}`, "!");
+  } finally {
+    state.updating = false;
+    otaAbort = undefined;
+    element("#cancel-update").hidden = true;
+    refresh();
+  }
+}
+
+function selectTab(tab: Tab): void {
+  state.tab = tab;
+  for (const name of ["remote", "console"] as const) {
+    element(`#${name}-panel`).hidden = tab !== name;
+    const button = element<HTMLButtonElement>(`#${name}-tab`);
+    button.setAttribute("aria-selected", String(tab === name));
+    button.tabIndex = tab === name ? 0 : -1;
+  }
+}
+
+function openCommandCatalog(): void {
+  const current = transport;
+  if (!current || !connected() || state.busy || state.updating || !current.capabilities.engineeringConsole) return;
+  const commands = getConsoleCommands(current.kind, current.capabilities).filter(item => item.available);
+  if (!commands.length) return;
+  const list = element("#command-list");
+  list.replaceChildren();
+  text("#command-dialog-title", `Команды ${current.kind === "bluetooth" ? "BLE" : "UART"}`);
+  for (const item of commands) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "command-option";
+    button.dataset.command = item.id;
+    const title = document.createElement("strong");
+    title.textContent = item.title;
+    const syntax = document.createElement("code");
+    syntax.textContent = item.syntax;
+    const description = document.createElement("span");
+    description.textContent = item.description;
+    button.append(title, syntax, description);
+    if (item.parameters) {
+      const parameters = document.createElement("small");
+      parameters.textContent = item.parameters;
+      button.append(parameters);
+    }
+    button.addEventListener("click", () => {
+      if (transport !== current || !connected() || state.busy || state.updating || !current.capabilities.engineeringConsole) return;
+      const input = element<HTMLInputElement>("#console-command");
+      input.value = item.command;
+      selectedCommandName = item.command.trim().split(/\s+/)[0];
+      text("#selected-command-hint", `${item.syntax}${item.parameters ? ` · ${item.parameters}` : ""}`);
+      element("#selected-command-hint").hidden = false;
+      element<HTMLDialogElement>("#command-dialog").close();
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
+    list.append(button);
+  }
+  element<HTMLDialogElement>("#command-dialog").showModal();
+  list.querySelector<HTMLButtonElement>("button")?.focus();
 }
 
 function bindEvents(): void {
-  app.querySelectorAll<HTMLButtonElement>("[data-earcup]").forEach(button => button.addEventListener("click", () => showTouch(button.dataset.earcup as Side)));
-  app.querySelectorAll<HTMLButtonElement>("[data-joystick]").forEach(button => {
-    const direction = button.dataset.joystick as Direction;
-    const arrows: Record<string, Direction> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
-    let pointerPressedAt = 0;
-    let keyboardHeld: Direction | undefined;
-    button.addEventListener("pointerdown", event => {
-      if (event.button !== 0) return;
-      pointerPressedAt = performance.now(); button.setPointerCapture(event.pointerId); setJoystickPressed(direction, true);
-    });
-    for (const event of ["pointerup", "pointercancel", "lostpointercapture"]) button.addEventListener(event, () => setJoystickPressed(direction, false));
-    button.addEventListener("click", event => {
-      if (event.detail === 0 || performance.now() - pointerPressedAt < 120) showJoystick(direction);
-    });
-    button.addEventListener("keydown", event => {
-      const key = arrows[event.key] ?? (["Enter", " "].includes(event.key) ? direction : undefined);
-      if (key) { event.preventDefault(); keyboardHeld = key; setJoystickPressed(key, true); }
-    });
-    button.addEventListener("keyup", event => {
-      const key = arrows[event.key] ?? (["Enter", " "].includes(event.key) ? direction : undefined);
-      if (!key) return;
-      event.preventDefault();
-      const brief = joystickHeld === key && performance.now() - joystickPressedAt < 120;
-      setJoystickPressed(key, false);
-      if (keyboardHeld === key) keyboardHeld = undefined;
-      if (brief) showJoystick(key);
-    });
-    button.addEventListener("blur", () => { if (keyboardHeld) setJoystickPressed(keyboardHeld, false); keyboardHeld = undefined; });
+  element("#unlock-form").addEventListener("submit", event => {
+    event.preventDefault();
+    if (state.unlocking) return;
+    const input = element<HTMLInputElement>("#access-key");
+    const key = input.value.trim();
+    input.value = "";
+    if (!key) { message("Введите ключ доступа."); input.focus(); return; }
+    state.unlocking = true;
+    message("");
+    refresh();
+    void unlockDeviceRuntime(key).then(() => {
+      message("Доступ открыт. Можно подключить наушники.");
+    }).catch((error: unknown) => {
+      message(error instanceof Error ? error.message : "Не удалось открыть доступ.", true);
+    }).finally(() => { state.unlocking = false; refresh(); });
   });
-  app.querySelector("#charging-toggle")?.addEventListener("click", () => { state.charging = !state.charging; render(); });
+  element("#connect-ble").addEventListener("click", () => { void connect("bluetooth"); });
+  element("#connect-uart").addEventListener("click", () => { void connect("serial"); });
+  element("#disconnect").addEventListener("click", () => { void command(current => current.disconnect()); });
   app.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach(button => {
-    button.addEventListener("click", () => { state.tab = button.dataset.tab as Tab; state.message = ""; render(); });
+    button.addEventListener("click", () => selectTab(button.dataset.tab as Tab));
     button.addEventListener("keydown", event => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
       event.preventDefault();
-      state.tab = event.key === "Home" ? "remote" : event.key === "End" ? "console" : state.tab === "remote" ? "console" : "remote";
-      state.message = ""; render(); app.querySelector<HTMLButtonElement>(`#${state.tab}-tab`)?.focus();
+      selectTab(event.key === "Home" ? "remote" : event.key === "End" ? "console" : state.tab === "remote" ? "console" : "remote");
+      element(`#${state.tab}-tab`).focus();
     });
   });
-  app.querySelector("#ht-toggle")?.addEventListener("click", () => { state.htEnabled = !state.htEnabled; render(); });
+  element("#ht-toggle").addEventListener("click", () => {
+    const enabled = field("hearThroughEnabled");
+    if (enabled !== undefined) void command(current => current.setHearThroughEnabled(!enabled));
+  });
   for (const id of ["ht-level", "ht-balance", "music-level"]) {
-    const input = app.querySelector<HTMLInputElement>(`#${id}`);
-    input?.addEventListener("input", () => {
-      const value = Number(input.value);
-      if (id === "ht-level") state.htLevel = value;
-      else if (id === "ht-balance") state.balance = value;
-      else state.musicLevel = value;
-      const output = app.querySelector(`#${id}-value`);
-      if (output) output.textContent = input.value;
-      if (id !== "ht-balance") input.style.setProperty("--range-fill", `${(value - Number(input.min)) / (Number(input.max) - Number(input.min)) * 100}%`);
-      const [left, right] = channelLevels();
-      const leftOutput = app.querySelector("#left-level"), rightOutput = app.querySelector("#right-level");
-      if (leftOutput) leftOutput.textContent = `${left} / 128`;
-      if (rightOutput) rightOutput.textContent = `${right} / 128`;
+    const input = element<HTMLInputElement>(`#${id}`);
+    input.addEventListener("pointerdown", () => { editingRanges.add(id); });
+    input.addEventListener("pointerup", () => {
+      window.setTimeout(() => { if (!state.busy) { editingRanges.delete(id); refresh(); } }, 0);
     });
+    input.addEventListener("input", () => {
+      editingRanges.add(id);
+      text(`#${id}-value`, input.value);
+      input.style.setProperty("--range-fill", `${(Number(input.value) - Number(input.min)) / (Number(input.max) - Number(input.min)) * 100}%`);
+    });
+    input.addEventListener("change", () => {
+      const value = Number(input.value);
+      void command(current => id === "ht-level" ? current.setHearThroughLevel(value) : id === "ht-balance" ? setBalance(current, value) : current.setMusicVolume(value));
+    });
+    for (const name of ["pointercancel", "blur"]) input.addEventListener(name, () => { if (!state.busy) { editingRanges.delete(id); refresh(); } });
   }
-  app.querySelector("#reset-balance")?.addEventListener("click", () => { state.balance = 0; render(); });
-  app.querySelector("#sleep")?.addEventListener("click", () => message("Макет: управление сном подключим следующим шагом."));
-  app.querySelector<HTMLInputElement>("#firmware-file")?.addEventListener("change", event => {
-    const file = (event.currentTarget as HTMLInputElement).files?.item(0);
-    if (file) { state.file = file; state.message = ""; render(); }
+  element("#reset-balance").addEventListener("click", () => { void command(current => setBalance(current, 0)); });
+  element("#microphone-toggle").addEventListener("click", () => {
+    const enabled = !state.microphoneRequested;
+    void command(async current => {
+      await current.setMicrophoneMonitor(enabled);
+      state.microphoneRequested = enabled;
+    });
   });
-  app.querySelector("#update-firmware")?.addEventListener("click", () => {
-    if (state.file) message("Макет: файл выбран, но не передаётся на наушники.");
+  element("#sleep").addEventListener("click", () => { void command(current => current.sleep(), "Команда Sleep подтверждена. Для следующего подключения может потребоваться включить наушники кнопкой."); });
+  element("#firmware-file").addEventListener("change", () => { void selectFirmware(); });
+  element("#update-firmware").addEventListener("click", () => { void updateFirmware(); });
+  element("#cancel-update").addEventListener("click", () => { otaAbort?.abort(); message("Прерываем OTA. Не считайте образ установленным до проверки версии."); });
+  element("#clear-console").addEventListener("click", () => { element("#console-output").replaceChildren(); });
+  element("#open-commands").addEventListener("click", openCommandCatalog);
+  element("#close-commands").addEventListener("click", () => element<HTMLDialogElement>("#command-dialog").close());
+  element("#command-dialog").addEventListener("click", event => {
+    const dialog = element<HTMLDialogElement>("#command-dialog");
+    if (event.target !== dialog) return;
+    const bounds = dialog.getBoundingClientRect();
+    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close();
   });
-  app.querySelector("#clear-console")?.addEventListener("click", () => { state.console = []; render(); });
-  app.querySelector<HTMLInputElement>("#console-command")?.addEventListener("input", event => { state.command = (event.currentTarget as HTMLInputElement).value; });
-  app.querySelector("#console-form")?.addEventListener("submit", event => {
+  element("#command-list").addEventListener("keydown", event => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const buttons = [...element("#command-list").querySelectorAll<HTMLButtonElement>("button")];
+    const index = buttons.findIndex(button => button === document.activeElement);
+    if (index < 0) return;
     event.preventDefault();
-    if (!state.command.trim()) return;
-    state.console.push({ time: new Date().toLocaleTimeString("en-GB", { hour12: false }), text: state.command.trim() });
-    if (state.console.length > 100) state.console.shift();
-    state.command = ""; state.message = "Макет: команда не отправлена."; render();
-    app.querySelector<HTMLInputElement>("#console-command")?.focus();
+    const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+    buttons[next]?.focus();
+  });
+  element<HTMLInputElement>("#console-command").addEventListener("input", event => {
+    const commandName = (event.currentTarget as HTMLInputElement).value.trim().split(/\s+/)[0];
+    if (commandName !== selectedCommandName) element("#selected-command-hint").hidden = true;
+  });
+  element("#console-form").addEventListener("submit", event => {
+    event.preventDefault();
+    const input = element<HTMLInputElement>("#console-command");
+    const value = input.value.trim();
+    if (!value || input.disabled) return;
+    void command(current => current.sendEngineeringCommand(value));
   });
 }
 
-window.addEventListener("blur", () => { if (joystickHeld) setJoystickPressed(joystickHeld, false); });
+window.addEventListener("beforeunload", event => {
+  if (state.updating) { event.preventDefault(); event.returnValue = ""; }
+});
 render();
+void refreshBluetoothAvailability();
+window.addEventListener("focus", () => { void refreshBluetoothAvailability(); });
+window.setInterval(refresh, 500);
