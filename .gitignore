@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.*
+*.fw
+*.FW
+*.bin
+*.log
+*.pem
+*.key
+*.pfx
+*.p12
