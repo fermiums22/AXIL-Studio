@@ -1,5 +1,5 @@
 import "./styles.css";
-import { WebBluetoothTransport, WebSerialTransport, getConsoleCommands, isDeviceRuntimeUnlocked, unlockDeviceRuntime } from "./transports";
+import { WebBluetoothTransport, getConsoleCommands, isDeviceRuntimeUnlocked, unlockDeviceRuntime } from "./transports";
 import { OTA_IMAGE_MAX_SIZE, validateOtaImage } from "./ota";
 import type { AxilTransport, OtaProgress, TelemetrySnapshot, TransportEvent } from "./types";
 
@@ -79,9 +79,29 @@ function pulse(key: Side | "center", glow: Element, marker?: Element): void {
   touchAnimations.set(key, animations);
 }
 
-function showTouch(side: Side): void {
+/** The firmware reports touch as a live level (polled ~5x/s), not just a
+ * press/release edge, so the glow can track an actual hold instead of only
+ * flashing on contact. Held keeps it lit; released hands off to the existing
+ * decay animation instead of resetting instantly. */
+function setTouchHeld(side: Side, held: boolean): void {
   const button = app.querySelector<HTMLElement>(`#sensor-${side}`);
-  if (button) pulse(side, button.querySelector(".sensor-glow")!, button.querySelector(".sensor-hit")!);
+  if (!button) return;
+  const glow = button.querySelector<HTMLElement>(".sensor-glow")!;
+  const marker = button.querySelector<HTMLElement>(".sensor-hit")!;
+  if (held) {
+    touchAnimations.get(side)?.forEach(animation => animation.cancel());
+    touchAnimations.delete(side);
+    glow.style.opacity = "1";
+    marker.style.opacity = "1";
+  } else {
+    // Read the current (still lit) opacity before clearing the inline
+    // override, otherwise pulse() sees the reverted CSS default (0) as its
+    // start point and the decay flashes back up from a dip instead of
+    // easing straight down from fully lit.
+    pulse(side, glow, marker);
+    glow.style.opacity = "";
+    marker.style.opacity = "";
+  }
 }
 
 function joystick(): string {
@@ -105,7 +125,9 @@ function setJoystickPressed(direction: Direction, pressed: boolean): void {
     if (direction === "center") pulse("center", app.querySelector("#joystick-glow")!);
   }
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const tilt: Record<Direction, string> = { up: "perspective(70px) translateY(-4px) rotateX(16deg)", down: "perspective(70px) translateY(4px) rotateX(-16deg)", left: "perspective(70px) translateX(-4px) rotateY(-16deg)", right: "perspective(70px) translateX(4px) rotateY(16deg)", center: "scale(.86)" };
+  // Tilts follow the same 90deg counter-clockwise remap as the key positions
+  // in styles.css: the "up" key now sits at the left, "down" at the right, etc.
+  const tilt: Record<Direction, string> = { up: "perspective(70px) translateX(-4px) rotateY(-16deg)", down: "perspective(70px) translateX(4px) rotateY(16deg)", left: "perspective(70px) translateY(4px) rotateX(-16deg)", right: "perspective(70px) translateY(-4px) rotateX(16deg)", center: "scale(.86)" };
   cap.style.transform = pressed && !reduced ? tilt[direction] : "none";
 }
 
@@ -122,7 +144,7 @@ function render(): void {
     <header class="connection-header">
       <div class="connection-title"><strong>AXIL Studio</strong><span id="connection-state" role="status">Не подключено</span></div>
       <form class="unlock-form" id="unlock-form" method="post"><input id="access-username" name="username" type="text" value="AXIL Studio" autocomplete="username" readonly hidden /><label class="visually-hidden" for="access-key">Пароль доступа</label><input id="access-key" name="password" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false" placeholder="Пароль доступа" aria-describedby="connection-hint" /><button class="button" id="unlock-device" type="submit">Открыть</button></form>
-      <div class="connection-actions"><button class="button" id="connect-ble" type="button">Подключить BLE</button><button class="button" id="connect-uart" type="button">UART</button><button class="text-button" id="disconnect" type="button" hidden>Отключить</button></div>
+      <div class="connection-actions"><button class="button" id="connect-ble" type="button">Подключить наушники</button><button class="text-button" id="disconnect" type="button" hidden>Отключить</button></div>
       <p class="connection-platform" id="platform-status"></p>
       <p class="connection-hint" id="connection-hint"></p>
     </header>
@@ -144,7 +166,7 @@ function render(): void {
         ${range("music-level", "Music level", 0, 16)}
         <section class="lower-controls" aria-label="Уровни и обновление">
           <div class="meters">
-            <div class="meter-block"><button class="meter-label microphone-toggle" id="microphone-toggle" type="button" aria-label="Включить измерение MEMS" aria-describedby="microphone-warning" title="Диагностика MEMS приостанавливает музыку" aria-pressed="false" disabled>MEMS MIC</button><div id="microphone-meter" class="meter-rail microphone" role="meter" aria-label="Уровень MEMS: нет данных" aria-valuemin="-60" aria-valuemax="0"><span></span></div><strong class="meter-reading" id="microphone-reading">—</strong><span class="meter-unit" id="microphone-note">Нет данных</span></div>
+            <div class="meter-block"><button class="meter-label microphone-toggle" id="microphone-toggle" type="button" aria-label="Включить измерение MEMS" aria-describedby="microphone-warning" title="Диагностика MEMS приостанавливает музыку" aria-pressed="false" disabled><span class="toggle-box" aria-hidden="true"></span>MEMS MIC</button><div id="microphone-meter" class="meter-rail microphone" role="meter" aria-label="Уровень MEMS: нет данных" aria-valuemin="-60" aria-valuemax="0"><span></span></div><strong class="meter-reading" id="microphone-reading">—</strong><span class="meter-unit" id="microphone-note">Нет данных</span></div>
             <div class="meter-block"><span class="meter-label charging-label" id="charging-state" title="Зарядка: нет данных">Battery<svg id="charger-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M7 2v4m6-4v4M5 6h10v3a5 5 0 0 1-5 5v4M5 9h10"/></svg></span><div id="battery-meter" class="meter-rail battery" role="meter" aria-label="Заряд батареи: нет данных" aria-valuemin="0" aria-valuemax="100"><span></span><svg id="battery-bolt" viewBox="0 0 16 28" aria-hidden="true" hidden><path d="M9 1 2 15h5l-1 12 8-16H9Z"/></svg></div><strong class="meter-reading" id="battery-reading">—</strong><span class="meter-unit" id="charge-description">Нет данных</span></div>
           </div>
           <div class="device-actions">
@@ -292,22 +314,18 @@ function refresh(): void {
   const free = active && !state.busy && !state.updating;
   const transitioning = state.connecting || transport?.state === "connecting" || transport?.state === "disconnecting";
   const ble = window.isSecureContext && "bluetooth" in navigator;
-  const serial = window.isSecureContext && "serial" in navigator;
   disabled("#connect-ble", !unlocked || !ble || transitioning || active || state.busy || state.updating);
-  disabled("#connect-uart", !unlocked || !serial || transitioning || active || state.busy || state.updating);
   element("#unlock-form").hidden = unlocked;
   disabled("#unlock-device", state.unlocking);
   element<HTMLInputElement>("#access-key").readOnly = state.unlocking;
   text("#unlock-device", state.unlocking ? "Открываем…" : "Открыть");
-  element("#connect-uart").hidden = !serial;
   element("#connect-ble").hidden = active;
-  if (active) element("#connect-uart").hidden = true;
   element("#disconnect").hidden = !active;
   disabled("#disconnect", state.updating || state.busy);
-  text("#connection-state", active ? `${transport!.kind === "bluetooth" ? "BLE" : "UART"} · подключено` : transport?.state === "disconnecting" ? "Отключение…" : transitioning ? state.deviceSelected ? "Наушники выбраны" : "Выбор устройства…" : "Устройство не выбрано");
+  text("#connection-state", active ? "Bluetooth LE · подключено" : transport?.state === "disconnecting" ? "Отключение…" : transitioning ? state.deviceSelected ? "Наушники выбраны" : "Выбор устройства…" : "Устройство не выбрано");
   const bluetoothStatus = !window.isSecureContext ? "Bluetooth: нужен HTTPS" : !ble ? "Браузер не поддерживает Bluetooth" : state.bluetoothAvailable === false ? "Bluetooth выключен или недоступен" : "Web Bluetooth доступен";
   text("#platform-status", `${platformName()} · ${bluetoothStatus}`);
-  text("#connection-hint", active || state.deviceSelected ? state.deviceName : !unlocked ? "Введите пароль доступа. Его можно сохранить в менеджере паролей браузера." : !window.isSecureContext ? "Для подключения откройте страницу по HTTPS или на localhost." : !ble ? "Этот браузер не предоставляет доступ к BLE. UART доступен, если показана его кнопка." : "Браузер запросит доступ и предложит выбрать наушники.");
+  text("#connection-hint", active || state.deviceSelected ? state.deviceName : !unlocked ? "Введите пароль доступа. Его можно сохранить в менеджере паролей браузера." : !window.isSecureContext ? "Для подключения откройте страницу по HTTPS или на localhost." : !ble ? "Этот браузер не предоставляет доступ к Bluetooth. Используйте Chrome или Edge." : "Список покажет все ближайшие BLE-устройства (ограничение Web Bluetooth) — выбирайте наушники с именем AXIL MX II PRO. Это отдельный инженерный канал (BLE GATT) — не звук: музыка и звонки идут по обычному сопряжению Bluetooth в ОС и Studio их не подключает.");
 
   const ht = field("hearThroughEnabled");
   const level = field("hearThroughLevel");
@@ -424,21 +442,22 @@ function receive(event: TransportEvent): void {
       if (snapshot[key] !== undefined) fieldTimes.set(key, performance.now());
     }
     state.telemetry = { ...state.telemetry, ...Object.fromEntries(Object.entries(snapshot).filter(([, value]) => value !== undefined)) };
-    const pressed = snapshot.inputSequence !== latestInputs.inputSequence ? snapshot.inputPressed ?? [] : [];
-    if (pressed.includes("touchLeft") || snapshot.touchLeft && !latestInputs.touchLeft) showTouch("left");
-    if (pressed.includes("touchRight") || snapshot.touchRight && !latestInputs.touchRight) showTouch("right");
+    // touchLeft/touchRight/joystickDirection are the driver's live, polled hold
+    // state (not a one-shot press edge), so the visualization tracks exactly
+    // that and nothing synthesized from the separate "pressed" edge flags -
+    // those can double-fire from contact bounce right as a sensor is released.
+    if (snapshot.touchLeft !== undefined) {
+      if (snapshot.touchLeft) setTouchHeld("left", true);
+      else if (latestInputs.touchLeft) setTouchHeld("left", false);
+    }
+    if (snapshot.touchRight !== undefined) {
+      if (snapshot.touchRight) setTouchHeld("right", true);
+      else if (latestInputs.touchRight) setTouchHeld("right", false);
+    }
     if (snapshot.joystickDirection !== undefined) {
       const direction = snapshot.joystickDirection;
-      window.clearTimeout(joystickTapTimer);
       if (joystickHeld && joystickHeld !== direction) setJoystickPressed(joystickHeld, false);
       if (direction !== "none") setJoystickPressed(direction, true);
-      else {
-        const tap = pressed.find((input): input is Direction => input !== "touchLeft" && input !== "touchRight");
-        if (tap) {
-          setJoystickPressed(tap, true);
-          joystickTapTimer = window.setTimeout(() => setJoystickPressed(tap, false), 220);
-        }
-      }
       element(".joystick").setAttribute("aria-label", direction === "none" ? "Джойстик: отпущен" : `Джойстик: ${direction}`);
     }
     if (snapshot.touchLeft !== undefined) element("#sensor-left").setAttribute("aria-label", `L: ${snapshot.touchLeft ? "касание" : "отпущен"}`);
@@ -448,10 +467,9 @@ function receive(event: TransportEvent): void {
   refresh();
 }
 
-async function connect(kind: "bluetooth" | "serial"): Promise<void> {
+async function connect(): Promise<void> {
   if (!isDeviceRuntimeUnlocked() || state.connecting || connected() || state.busy || state.updating) return;
-  const label = kind === "bluetooth" ? "BLE" : "UART";
-  log(`${label}: выбор устройства и подключение…`);
+  log("Bluetooth LE: выбор устройства и подключение…");
   state.connecting = true;
   state.negotiated = false;
   state.telemetry = {};
@@ -466,17 +484,17 @@ async function connect(kind: "bluetooth" | "serial"): Promise<void> {
   transport = undefined;
   try {
     if (previous) await previous.disconnect();
-    const current = kind === "bluetooth" ? new WebBluetoothTransport() : new WebSerialTransport();
+    const current = new WebBluetoothTransport();
     transport = current;
     unsubscribe = current.on(event => { if (transport === current) receive(event); });
     refresh();
     await current.connect();
     state.negotiated = true;
-    log(`${label}: подключено, возможности прошивки проверены.`);
+    log("Bluetooth LE: подключено, возможности прошивки проверены.");
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     message(detail, true);
-    log(`${label}: ${detail}`, "!");
+    log(`Bluetooth LE: ${detail}`, "!");
   } finally {
     state.connecting = false;
     refresh();
@@ -625,7 +643,7 @@ function openCommandCatalog(): void {
   if (!commands.length) return;
   const list = element("#command-list");
   list.replaceChildren();
-  text("#command-dialog-title", `Команды ${current.kind === "bluetooth" ? "BLE" : "UART"}`);
+  text("#command-dialog-title", "Команды BLE");
   for (const item of commands) {
     const button = document.createElement("button");
     button.type = "button";
@@ -691,8 +709,7 @@ function bindEvents(): void {
       message(error instanceof Error ? error.message : "Не удалось открыть доступ.", true);
     }).finally(() => { input.value = ""; state.unlocking = false; refresh(); });
   });
-  element("#connect-ble").addEventListener("click", () => { void connect("bluetooth"); });
-  element("#connect-uart").addEventListener("click", () => { void connect("serial"); });
+  element("#connect-ble").addEventListener("click", () => { void connect(); });
   element("#disconnect").addEventListener("click", () => { void command(current => current.disconnect(), "", "Отключение"); });
   app.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach(button => {
     button.addEventListener("click", () => selectTab(button.dataset.tab as Tab));

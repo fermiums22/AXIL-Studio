@@ -32,8 +32,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, .file-button:ha
 .unlock-form input { min-width: 0; width: 100%; height: 35px; padding: 7px 9px; border: 1px solid #414d45; border-radius: 4px; color: #e4e9e5; background: #202722; font-size: 11px; }
 .unlock-form .button { min-height: 35px; padding-inline: 6px; font-size: 11px; }
 .connection-hint, .capability-note, .console-hint { color: var(--muted); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
-.connection-hint { margin: 9px 0 0; }
-.connection-platform { margin: 10px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+/* Reserve room for the longest message this text cycles through (the
+ * disconnected-state explanation) so shorter states (a device name, a short
+ * status line) don't shrink the block and shift the console below it. */
+.connection-hint { margin: 9px 0 0; min-height: calc(1.5em * 3); }
+.connection-platform { margin: 10px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; min-height: 1.5em; }
 .capability-note { margin: -4px 0 18px; }
 .capability-note:empty { display: none; }
 .console-hint { margin: 0 0 12px; }
@@ -69,16 +72,19 @@ main { padding: 0 24px; flex: 1; }
 #joystick-cap { position: absolute; inset: 8px; border: 1px solid #809284; border-radius: 50%; background: radial-gradient(circle at 38% 25%, #6d7d70, #46584b 55%, #314437); box-shadow: 0 3px 3px #0006; transition: transform 90ms ease-out; }
 #joystick-cap::after { content: ""; position: absolute; inset: 6px; border: 1px solid #98aa9c66; border-radius: 50%; }
 .joystick-key { position: absolute; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: #97aa9d; touch-action: manipulation; }
-.joystick-key.up { top: 0; left: 32px; }
-.joystick-key.down { bottom: 0; left: 32px; }
-.joystick-key.left { left: 0; top: 32px; }
-.joystick-key.right { right: 0; top: 32px; }
+/* Positions are rotated 90deg counter-clockwise from the direction name: the
+ * physical sensor's up/down axis reads as the on-screen left/right axis, so
+ * the "up" key is drawn at the left, "down" at the right, and so on. */
+.joystick-key.up { left: 0; top: 32px; }
+.joystick-key.down { right: 0; top: 32px; }
+.joystick-key.left { bottom: 0; left: 32px; }
+.joystick-key.right { top: 0; left: 32px; }
 .joystick-key.center { left: 32px; top: 32px; border-radius: 50%; }
 .joystick-key.is-pressed { color: var(--green); }
 .joystick-key > span { width: 6px; height: 6px; border-top: 1px solid; border-left: 1px solid; transform: rotate(45deg); }
-.joystick-key.down > span { transform: rotate(225deg); }
-.joystick-key.left > span { transform: rotate(-45deg); }
-.joystick-key.right > span { transform: rotate(135deg); }
+.joystick-key.up > span { transform: rotate(-45deg); }
+.joystick-key.down > span { transform: rotate(135deg); }
+.joystick-key.left > span { transform: rotate(225deg); }
 #joystick-glow { inset: -8px; background-position: center; }
 .control { padding: 20px 0 15px; border-bottom: 1px solid var(--line); }
 .control-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; font-size: 13px; font-weight: 600; }
@@ -101,9 +107,12 @@ input[type="range"]:disabled::-moz-range-thumb { border-color: #647369; }
 .meters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; padding-right: 3px; align-items: start; }
 .meter-block { display: flex; flex-direction: column; align-items: center; text-align: center; min-width: 0; }
 .meter-label { font-size: 10px; font-weight: 600; margin-bottom: 15px; }
-.microphone-toggle { border: 0; border-bottom: 1px dotted #7f9988; padding: 0; background: transparent; color: inherit; white-space: nowrap; }
+.microphone-toggle { display: inline-flex; align-items: center; gap: 5px; border: 0; padding: 0; background: transparent; color: inherit; white-space: nowrap; }
 .microphone-toggle[aria-pressed="true"] { color: var(--green); }
-.microphone-toggle:disabled { border-color: transparent; color: var(--muted); }
+.microphone-toggle:disabled { color: var(--muted); }
+.toggle-box { width: 11px; height: 11px; flex: none; border: 1px solid currentColor; border-radius: 2px; position: relative; }
+.microphone-toggle[aria-pressed="true"] .toggle-box { background: var(--green); border-color: var(--green); }
+.microphone-toggle[aria-pressed="true"] .toggle-box::after { content: ""; position: absolute; left: 3px; top: 0px; width: 3px; height: 6px; border: solid #0b120d; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
 .meter-rail { height: 98px; width: 25px; position: relative; background: #252e28; border: 1px solid #46524a; border-radius: 3px; }
 .meter-rail > span { position: absolute; bottom: 2px; left: 2px; right: 2px; height: clamp(0px, var(--level, 0%), 92px); background: #59ad79; border-radius: 1px; transition: height 120ms linear; }
 .microphone::after { content: ""; position: absolute; inset: 1px; background: repeating-linear-gradient(to top, transparent 0 8px, var(--surface) 8px 10px); }
