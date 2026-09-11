@@ -65,14 +65,20 @@ function earcup(side: Side): string {
   </div>`;
 }
 
-function pulse(key: Side | "center", glow: Element, marker?: Element): void {
+/** growFromSmall is for a fresh tap flash starting at rest (no transform
+ * yet): it grows in from scale(.88) as part of the effect. A release from
+ * an already fully lit/held state is already at its natural size, so it
+ * must decay from "none" as-is - substituting scale(.88) there reads as a
+ * brightness dip even though opacity alone starts at 1. */
+function pulse(key: Side | "center", glow: Element, marker?: Element, growFromSmall = true): void {
   const previousOpacity = getComputedStyle(glow).opacity;
   const previousTransform = getComputedStyle(glow).transform;
   touchAnimations.get(key)?.forEach(animation => animation.cancel());
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const startTransform = previousTransform === "none" && growFromSmall ? "scale(.88)" : previousTransform;
   const frames: Keyframe[] = reduced
     ? [{ opacity: .85 }, { opacity: .85, offset: .99 }, { opacity: 0 }]
-    : [{ opacity: previousOpacity, transform: previousTransform === "none" ? "scale(.88)" : previousTransform }, { opacity: .95, transform: "scale(1)", offset: .12 }, { opacity: .45, transform: "scale(1.08)", offset: .55 }, { opacity: 0, transform: "scale(1.18)" }];
+    : [{ opacity: previousOpacity, transform: startTransform }, { opacity: .95, transform: "scale(1)", offset: .12 }, { opacity: .45, transform: "scale(1.08)", offset: .55 }, { opacity: 0, transform: "scale(1.18)" }];
   const options = { duration: reduced ? 450 : 2200, easing: "ease-out" };
   const animations = [glow.animate(frames, options)];
   if (marker) animations.push(marker.animate(frames.map(({ opacity, offset }) => ({ opacity, offset })), options));
@@ -97,8 +103,9 @@ function setTouchHeld(side: Side, held: boolean): void {
     // Read the current (still lit) opacity before clearing the inline
     // override, otherwise pulse() sees the reverted CSS default (0) as its
     // start point and the decay flashes back up from a dip instead of
-    // easing straight down from fully lit.
-    pulse(side, glow, marker);
+    // easing straight down from fully lit. growFromSmall=false: already at
+    // full size while held, so decay in place instead of re-shrinking first.
+    pulse(side, glow, marker, false);
     glow.style.opacity = "";
     marker.style.opacity = "";
   }
