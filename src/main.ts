@@ -554,6 +554,8 @@ async function selectFirmware(): Promise<void> {
   resetOtaProgress();
   const selection = ++fileSelection;
   const file = element<HTMLInputElement>("#firmware-file").files?.item(0) ?? null;
+  // A new build often has the same filename. Allow selecting it again.
+  element<HTMLInputElement>("#firmware-file").value = "";
   state.file = file;
   firmwareBytes = undefined;
   state.fileLoading = !!file;
