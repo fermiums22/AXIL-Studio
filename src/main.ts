@@ -3,7 +3,10 @@ import { WebBluetoothTransport, getConsoleCommands, isDeviceRuntimeUnlocked, unl
 import { OTA_IMAGE_MAX_SIZE, validateOtaImage } from "./ota";
 import type { AxilTransport, OtaProgress, TelemetrySnapshot, TransportEvent } from "./types";
 
-type Tab = "remote" | "console";
+type Tab = "remote" | "equalizer" | "console";
+const tabs: readonly Tab[] = ["remote", "equalizer", "console"];
+const eqLabels = ["100 Hz", "400 Hz", "1 kHz", "4 kHz", "10 kHz"];
+const voiceLabels = ["Включение наушников", "Выключение наушников", "Режим сопряжения", "Очистка списка пар", "Bluetooth подключён", "Bluetooth отключён", "Минимум громкости музыки", "Увеличение громкости HT", "Уменьшение громкости HT", "Включение HT", "Выключение HT", "Максимум громкости HT", "Минимум громкости HT", "Максимум громкости музыки"];
 type Side = "left" | "right";
 type Direction = "up" | "down" | "left" | "right" | "center";
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -190,6 +193,16 @@ function render(): void {
         <p class="capability-note" id="microphone-warning" hidden>Диагностика MEMS приостанавливает музыку.</p>
         <p class="capability-note" id="capability-note"></p>
       </section>
+      <section class="equalizer-panel" id="equalizer-panel" role="tabpanel" aria-labelledby="equalizer-tab" hidden>
+        <h1>Эквалайзер</h1>
+        <p class="capability-note">Bluetooth-музыка · ±6 dB. Настройки EQ действуют до выключения. Отключение возвращает штатный звук. HT использует отдельный аналоговый тракт.</p>
+        <label class="voice-option"><input id="eq-enabled" type="checkbox" disabled />Включить эквалайзер</label>
+        <p id="eq-status" class="capability-note">Нет данных</p>
+        ${eqLabels.map((label, index) => range(`eq-${index}`, label, -6, 6)).join("")}
+        <h2>Озвучка действий</h2>
+        <p class="capability-note" id="voice-status">Нет данных</p>
+        <div class="voice-options">${voiceLabels.map((label, index) => `<label class="voice-option"><input id="voice-${index}" type="checkbox" disabled />${label}</label>`).join("")}</div>
+      </section>
       <section class="console-panel" id="console-panel" role="tabpanel" aria-labelledby="console-tab" hidden>
         <div class="console-heading"><h1>Console</h1><button class="text-button" id="save-console" type="button" title="Сохранить до 5000 строк в текстовый файл" disabled>Сохранить консоль</button><button class="text-button" id="clear-console" type="button">Clear</button></div>
         <p class="console-hint" id="console-hint">Подключите наушники для отправки команд.</p>
@@ -199,7 +212,7 @@ function render(): void {
     </main>
     <dialog class="command-dialog" id="command-dialog" aria-labelledby="command-dialog-title"><div class="command-dialog-heading"><h2 id="command-dialog-title">Команды</h2><button class="text-button" id="close-commands" type="button" aria-label="Закрыть список команд">×</button></div><p class="console-hint">Выбор подставляет команду. Отправка — кнопкой Send.</p><div class="command-list" id="command-list"></div></dialog>
     <p class="notice" id="notice" role="status" hidden></p>
-    <nav class="tabs" role="tablist" aria-label="Page"><button id="remote-tab" type="button" role="tab" data-tab="remote" aria-selected="true" aria-controls="remote-panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14M9 3v6M15 9v6M9 15v6"/></svg>Remote</button><button id="console-tab" type="button" role="tab" data-tab="console" aria-selected="false" aria-controls="console-panel" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m5 6 6 6-6 6M13 18h6"/></svg>Console</button></nav>
+    <nav class="tabs" role="tablist" aria-label="Page"><button id="remote-tab" type="button" role="tab" data-tab="remote" aria-selected="true" aria-controls="remote-panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14M9 3v6M15 9v6M9 15v6"/></svg>Remote</button><button id="equalizer-tab" type="button" role="tab" data-tab="equalizer" aria-selected="false" aria-controls="equalizer-panel" tabindex="-1">Эквалайзер</button><button id="console-tab" type="button" role="tab" data-tab="console" aria-selected="false" aria-controls="console-panel" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m5 6 6 6-6 6M13 18h6"/></svg>Console</button></nav>
   </div>`;
   bindEvents();
   refresh();
@@ -349,6 +362,20 @@ function refresh(): void {
   updateRange("ht-level", level, !!(free && caps?.hearThroughLevel && ht === true && level !== undefined), caps?.hearThroughLevelMax ?? 5);
   updateRange("ht-balance", balance, !!(free && caps?.hearThroughBalance && balance !== undefined));
   updateRange("music-level", volume, !!(free && caps?.musicVolume && volume !== undefined), volumeMax);
+  const eqEnabled = field("equalizerEnabled"), eqGains = field("equalizerGains");
+  const eqAvailable = !!(free && caps?.equalizer && eqEnabled !== undefined && eqGains);
+  element<HTMLInputElement>("#eq-enabled").checked = eqEnabled === true;
+  disabled("#eq-enabled", !eqAvailable);
+  text("#eq-status", eqEnabled === undefined ? active && !caps?.equalizer ? "Не поддерживается этой прошивкой" : "Нет данных" : eqEnabled ? "EQ включён · усиление полос в dB" : "Штатный звук");
+  eqLabels.forEach((_, index) => updateRange(`eq-${index}`, eqGains?.[index], eqAvailable && eqEnabled === true));
+  const voiceMask = field("voicePromptMask");
+  voiceLabels.forEach((_, index) => {
+    const input = element<HTMLInputElement>(`#voice-${index}`);
+    input.checked = voiceMask !== undefined && !!(voiceMask & (1 << index));
+    input.indeterminate = voiceMask === undefined;
+    input.disabled = !(free && caps?.voicePrompts && voiceMask !== undefined);
+  });
+  text("#voice-status", voiceMask === undefined ? active && !caps?.voicePrompts ? "Не поддерживается этой прошивкой" : "Нет данных" : "Галочка включает озвучку. Сохраняется в наушниках. Заряд и входящий звонок — без изменений.");
   text("#left-level", `${field("hearThroughLeftLevel") ?? "—"} / 127`);
   text("#right-level", `${field("hearThroughRightLevel") ?? "—"} / 127`);
   const silentPair = field("hearThroughLeftLevel") === 0 && field("hearThroughRightLevel") === 0;
@@ -635,7 +662,7 @@ async function updateFirmware(): Promise<void> {
 
 function selectTab(tab: Tab): void {
   state.tab = tab;
-  for (const name of ["remote", "console"] as const) {
+  for (const name of tabs) {
     element(`#${name}-panel`).hidden = tab !== name;
     const button = element<HTMLButtonElement>(`#${name}-tab`);
     button.setAttribute("aria-selected", String(tab === name));
@@ -723,7 +750,7 @@ function bindEvents(): void {
     button.addEventListener("keydown", event => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
       event.preventDefault();
-      selectTab(event.key === "Home" ? "remote" : event.key === "End" ? "console" : state.tab === "remote" ? "console" : "remote");
+      selectTab(event.key === "Home" ? "remote" : event.key === "End" ? "console" : tabs[(tabs.indexOf(state.tab) + (event.key === "ArrowLeft" ? tabs.length - 1 : 1)) % tabs.length]);
       element(`#${state.tab}-tab`).focus();
     });
   });
@@ -750,6 +777,29 @@ function bindEvents(): void {
     for (const name of ["pointercancel", "blur"]) input.addEventListener(name, () => { if (!state.busy) { editingRanges.delete(id); refresh(); } });
   }
   element("#reset-balance").addEventListener("click", () => { void command(current => setBalance(current, 0), "", "Выровнять HT L/R"); });
+  element("#eq-enabled").addEventListener("change", () => {
+    const enabled = element<HTMLInputElement>("#eq-enabled").checked;
+    const gains = field("equalizerGains");
+    if (gains) void command(current => current.setEqualizer(enabled, gains), "", `EQ ${enabled ? "включить" : "выключить"}`);
+  });
+  eqLabels.forEach((_, index) => {
+    const id = `eq-${index}`, input = element<HTMLInputElement>(`#${id}`);
+    input.addEventListener("input", () => { editingRanges.add(id); text(`#${id}-value`, input.value); });
+    input.addEventListener("change", () => {
+      const gains = field("equalizerGains");
+      if (!gains) { editingRanges.delete(id); refresh(); return; }
+      const next = [...gains]; next[index] = Number(input.value);
+      void command(current => current.setEqualizer(true, next), "", `EQ ${eqLabels[index]}: ${input.value} dB`);
+    });
+    for (const name of ["pointercancel", "blur"]) input.addEventListener(name, () => { if (!state.busy) { editingRanges.delete(id); refresh(); } });
+  });
+  voiceLabels.forEach((label, index) => element(`#voice-${index}`).addEventListener("change", () => {
+    const mask = field("voicePromptMask");
+    if (mask === undefined) return;
+    const enabled = element<HTMLInputElement>(`#voice-${index}`).checked;
+    const next = enabled ? mask | (1 << index) : mask & ~(1 << index);
+    void command(current => current.setVoicePrompts(next), "", `${label}: ${enabled ? "озвучивать" : "без озвучки"}`);
+  }));
   element("#microphone-toggle").addEventListener("click", () => {
     const enabled = !state.microphoneRequested;
     void command(async current => {

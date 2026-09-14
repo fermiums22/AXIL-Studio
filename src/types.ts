@@ -38,6 +38,8 @@ export interface TransportCapabilities {
   readonly hearThroughEnabled: boolean;
   readonly hearThroughBalance: boolean;
   readonly musicVolume: boolean;
+  readonly equalizer: boolean;
+  readonly voicePrompts: boolean;
   readonly sleep: boolean;
   readonly microphone: boolean;
   readonly inputs: boolean;
@@ -71,6 +73,9 @@ export interface TelemetrySnapshot {
   readonly batteryDescription?: string;
   readonly volume?: number;
   readonly eqPreset?: number;
+  readonly equalizerEnabled?: boolean;
+  readonly equalizerGains?: readonly number[];
+  readonly voicePromptMask?: number;
   readonly hearThroughEnabled?: boolean;
   readonly hearThroughLevel?: number;
   readonly hearThroughBalance?: number;
@@ -141,6 +146,8 @@ export interface AxilTransport {
   setHearThroughLevel(level: number): Promise<void>;
   setHearThroughBalance(left: number, right: number): Promise<void>;
   setMusicVolume(volume: number): Promise<void>;
+  setEqualizer(enabled: boolean, gains: readonly number[]): Promise<void>;
+  setVoicePrompts(mask: number): Promise<void>;
   setMicrophoneMonitor(enabled: boolean): Promise<void>;
   sleep(): Promise<void>;
   updateFirmware(image: Uint8Array, progress: (value: OtaProgress) => void, signal?: AbortSignal): Promise<void>;
