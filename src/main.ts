@@ -1,4 +1,5 @@
 import "./styles.css";
+import { setupMicrophoneTest } from "./microphone-test";
 import { WebBluetoothTransport, getConsoleCommands, isDeviceRuntimeUnlocked, unlockDeviceRuntime } from "./transports";
 import { OTA_IMAGE_MAX_SIZE, validateOtaImage } from "./ota";
 import type { AxilTransport, OtaProgress, TelemetrySnapshot, TransportEvent } from "./types";
@@ -18,6 +19,7 @@ const consoleLines: string[] = [];
 let consoleCharacters = 0;
 let discardedConsoleLines = 0;
 let transport: AxilTransport | undefined;
+let microphoneTest: ReturnType<typeof setupMicrophoneTest> | undefined;
 let unsubscribe: (() => void) | undefined;
 let firmwareBytes: Uint8Array | undefined;
 let fileSelection = 0;
@@ -39,7 +41,6 @@ const state = {
   otaTransferred: 0,
   fileLoading: false,
   unlocking: false,
-  microphoneRequested: false,
   deviceSelected: false,
   bluetoothAvailable: undefined as boolean | undefined,
   deviceName: "Наушники не подключены",
@@ -176,7 +177,7 @@ function render(): void {
         ${range("music-level", "Music level", 0, 16)}
         <section class="lower-controls" aria-label="Уровни и обновление">
           <div class="meters">
-            <div class="meter-block"><button class="meter-label microphone-toggle" id="microphone-toggle" type="button" aria-label="Включить измерение MEMS" aria-describedby="microphone-warning" title="Диагностика MEMS приостанавливает музыку" aria-pressed="false" disabled><span class="toggle-box" aria-hidden="true"></span>MEMS MIC</button><div id="microphone-meter" class="meter-rail microphone" role="meter" aria-label="Уровень MEMS: нет данных" aria-valuemin="-60" aria-valuemax="0"><span></span></div><strong class="meter-reading" id="microphone-reading">—</strong><span class="meter-unit" id="microphone-note">Нет данных</span></div>
+            <div class="meter-block"><button class="meter-label microphone-toggle" id="microphone-toggle" type="button" aria-label="Записать или остановить тест микрофона AXIL" aria-describedby="microphone-warning" aria-pressed="false"><span class="toggle-box" aria-hidden="true"></span>Тест микрофона</button><span class="meter-unit" id="microphone-note" role="status">Запись 5 секунд</span><button class="button" id="microphone-play" type="button" disabled>Прослушать / стоп</button></div>
             <div class="meter-block"><span class="meter-label charging-label" id="charging-state" title="Зарядка: нет данных">Battery<svg id="charger-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M7 2v4m6-4v4M5 6h10v3a5 5 0 0 1-5 5v4M5 9h10"/></svg></span><div id="battery-meter" class="meter-rail battery" role="meter" aria-label="Заряд батареи: нет данных" aria-valuemin="0" aria-valuemax="100"><span></span><svg id="battery-bolt" viewBox="0 0 16 28" aria-hidden="true" hidden><path d="M9 1 2 15h5l-1 12 8-16H9Z"/></svg></div><strong class="meter-reading" id="battery-reading">—</strong><span class="meter-unit" id="charge-description">Нет данных</span></div>
           </div>
           <div class="device-actions">
@@ -190,12 +191,12 @@ function render(): void {
             </div>
           </div>
         </section>
-        <p class="capability-note" id="microphone-warning" hidden>Диагностика MEMS приостанавливает музыку.</p>
+        <p class="capability-note" id="microphone-warning">Подключите AXIL для звонков в Bluetooth ОС и разрешите микрофон в настройках сайта. Запись остаётся в браузере. Во время теста музыка может прерваться.</p>
         <p class="capability-note" id="capability-note"></p>
       </section>
       <section class="equalizer-panel" id="equalizer-panel" role="tabpanel" aria-labelledby="equalizer-tab" hidden>
         <h1>Эквалайзер</h1>
-        <p class="capability-note">Bluetooth-музыка · ±6 dB. Настройки EQ действуют до выключения. Отключение возвращает штатный звук. HT использует отдельный аналоговый тракт.</p>
+        <p class="capability-note">Bluetooth-музыка · ±6 dB. Настройки EQ сохраняются в обновлённой прошивке. Отключение возвращает штатный звук. HT использует отдельный аналоговый тракт.</p>
         <label class="voice-option"><input id="eq-enabled" type="checkbox" disabled />Включить эквалайзер</label>
         <p id="eq-status" class="capability-note">Нет данных</p>
         ${eqLabels.map((label, index) => range(`eq-${index}`, label, -6, 6)).join("")}
@@ -398,19 +399,7 @@ function refresh(): void {
   element("#battery-bolt").toggleAttribute("hidden", charge !== true);
   text("#charge-description", chargeLabel);
 
-  const microphoneAge = (field("microphoneAgeMs", 500) ?? Infinity) + performance.now() - (fieldTimes.get("microphoneAgeMs") ?? 0);
-  const mic = field("microphoneValid", 500) === true && microphoneAge <= 500 ? field("microphoneAmbientDbfs", 500) : undefined;
-  const micMeter = element("#microphone-meter");
-  micMeter.querySelector<HTMLElement>("span")!.style.setProperty("--level", `${mic === undefined ? 0 : Math.max(0, Math.min(100, (mic + 60) / 60 * 100))}%`);
-  text("#microphone-reading", mic === undefined ? "—" : `${Math.round(mic)}`);
-  text("#microphone-note", mic === undefined ? active && !caps?.microphone ? "Недоступен" : state.microphoneRequested ? "Нет сэмплов" : "Нажмите MIC" : "dBFS · mono");
-  disabled("#microphone-toggle", !(free && caps?.microphone));
-  element("#microphone-warning").hidden = !(active && caps?.microphone);
-  element("#microphone-toggle").setAttribute("aria-pressed", String(state.microphoneRequested));
-  element("#microphone-toggle").setAttribute("aria-label", state.microphoneRequested ? "Выключить измерение MEMS" : "Включить измерение MEMS");
-  micMeter.setAttribute("aria-label", mic === undefined ? "Уровень MEMS: нет данных" : "Уровень MEMS, dBFS");
-  if (mic === undefined) micMeter.removeAttribute("aria-valuenow");
-  else micMeter.setAttribute("aria-valuenow", String(Math.max(-60, Math.min(0, mic))));
+  disabled("#microphone-toggle", state.updating);
 
   const inputsFresh = !!caps?.inputs && field("inputSequence", 3000) !== undefined;
   text("#input-status", inputsFresh ? "Сенсоры и джойстик · состояние наушников" : active && !caps?.inputs ? "Сенсоры и джойстик · нужны новые интерфейсы прошивки" : "Сенсоры и джойстик · нет данных");
@@ -449,7 +438,6 @@ function receive(event: TransportEvent): void {
       state.telemetry = {};
       fieldTimes.clear();
       latestInputs = {};
-      state.microphoneRequested = false;
       state.deviceSelected = false;
       editingRanges.clear();
       selectedCommandName = "";
@@ -509,7 +497,6 @@ async function connect(): Promise<void> {
   state.telemetry = {};
   fieldTimes.clear();
   latestInputs = {};
-  state.microphoneRequested = false;
   state.deviceSelected = false;
   resetOtaProgress();
   message("");
@@ -625,13 +612,13 @@ async function updateFirmware(): Promise<void> {
   const current = transport;
   const bytes = firmwareBytes;
   if (!current || !connected() || !current.capabilities.ota || !bytes || state.busy || state.updating) return;
+  microphoneTest?.cancel();
   state.updating = true;
   state.otaStatus = "working";
   state.otaPercent = 0;
   state.otaStartedAt = performance.now();
   state.otaElapsedMs = 0;
   state.otaTransferred = 0;
-  state.microphoneRequested = false;
   otaAbort = new AbortController();
   element("#ota-progress").hidden = false;
   element("#cancel-update").hidden = false;
@@ -800,13 +787,6 @@ function bindEvents(): void {
     const next = enabled ? mask | (1 << index) : mask & ~(1 << index);
     void command(current => current.setVoicePrompts(next), "", `${label}: ${enabled ? "озвучивать" : "без озвучки"}`);
   }));
-  element("#microphone-toggle").addEventListener("click", () => {
-    const enabled = !state.microphoneRequested;
-    void command(async current => {
-      await current.setMicrophoneMonitor(enabled);
-      state.microphoneRequested = enabled;
-    }, "", `MEMS MIC ${enabled ? "включить" : "выключить"}`);
-  });
   element("#sleep").addEventListener("click", () => { void command(current => current.sleep(), "Команда Sleep подтверждена. Для следующего подключения может потребоваться включить наушники кнопкой.", "Sleep"); });
   element("#firmware-file").addEventListener("change", () => { void selectFirmware(); });
   element("#update-firmware").addEventListener("click", () => { void updateFirmware(); });
@@ -847,6 +827,7 @@ window.addEventListener("beforeunload", event => {
   if (state.updating) { event.preventDefault(); event.returnValue = ""; }
 });
 render();
+microphoneTest = setupMicrophoneTest(app, () => state.updating);
 void refreshBluetoothAvailability();
 window.addEventListener("focus", () => { void refreshBluetoothAvailability(); });
 window.setInterval(refresh, 500);

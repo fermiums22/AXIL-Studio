@@ -180,3 +180,5 @@ input[type="range"]:disabled::-moz-range-thumb { border-color: #647369; }
 .voice-option { display: flex; align-items: center; gap: 12px; min-height: 44px; font-size: 14px; }
 .voice-option input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--green); }
 .equalizer-panel h2 { margin-top: 28px; font-size: 18px; }
+#microphone-note { white-space: normal; overflow-wrap: anywhere; }
+#microphone-play { margin-top: 8px; font-size: 10px; }
