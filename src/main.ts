@@ -175,9 +175,12 @@ function render(): void {
           <p class="balance-note" id="balance-note" hidden></p>
         </section>
         ${range("music-level", "Music level", 0, 16)}
+        <section class="microphone-test" aria-label="Проверка разговорного микрофона">
+          <div class="microphone-actions"><button class="button" id="microphone-toggle" type="button" aria-label="Записать или остановить тест микрофона AXIL" aria-describedby="microphone-warning" aria-pressed="false">Записать 5 секунд / стоп</button><button class="button" id="microphone-play" type="button" disabled>Прослушать / стоп</button></div>
+          <p id="microphone-note" role="status">Тест разговорного микрофона AXIL</p>
+        </section>
         <section class="lower-controls" aria-label="Уровни и обновление">
           <div class="meters">
-            <div class="meter-block"><button class="meter-label microphone-toggle" id="microphone-toggle" type="button" aria-label="Записать или остановить тест микрофона AXIL" aria-describedby="microphone-warning" aria-pressed="false"><span class="toggle-box" aria-hidden="true"></span>Тест микрофона</button><span class="meter-unit" id="microphone-note" role="status">Запись 5 секунд</span><button class="button" id="microphone-play" type="button" disabled>Прослушать / стоп</button></div>
             <div class="meter-block"><span class="meter-label charging-label" id="charging-state" title="Зарядка: нет данных">Battery<svg id="charger-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M7 2v4m6-4v4M5 6h10v3a5 5 0 0 1-5 5v4M5 9h10"/></svg></span><div id="battery-meter" class="meter-rail battery" role="meter" aria-label="Заряд батареи: нет данных" aria-valuemin="0" aria-valuemax="100"><span></span><svg id="battery-bolt" viewBox="0 0 16 28" aria-hidden="true" hidden><path d="M9 1 2 15h5l-1 12 8-16H9Z"/></svg></div><strong class="meter-reading" id="battery-reading">—</strong><span class="meter-unit" id="charge-description">Нет данных</span></div>
           </div>
           <div class="device-actions">
