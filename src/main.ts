@@ -171,7 +171,9 @@ function render(): void {
         <section class="control balance-control" aria-labelledby="balance-label">
           <div class="control-label"><label id="balance-label" for="ht-balance">HT balance</label><output id="ht-balance-value" for="ht-balance">—</output></div>
           <div class="balance-track"><input id="ht-balance" type="range" min="-127" max="127" value="0" disabled /></div>
-          <div class="balance-values"><span>L <strong id="left-level">— / 127</strong></span><button class="text-button" id="reset-balance" type="button" title="Выровнять L/R" disabled>Reset</button><span>R <strong id="right-level">— / 127</strong></span></div>
+          <div class="balance-values"><span>L <strong id="left-level">— / 127</strong></span><button class="text-button" id="reset-balance" type="button" title="Выровнять HT L/R" disabled>Reset</button><span>R <strong id="right-level">— / 127</strong></span></div>
+          <p class="balance-note">Только баланс HT (окружающего звука). Баланс музыки настраивается на устройстве-источнике.</p>
+          <p class="balance-note">0 на ползунке — центр (L = R). Уровни L/R: 0 — минимум, 127 — максимум.</p>
           <p class="balance-note" id="balance-note" hidden></p>
         </section>
         ${range("music-level", "Music level", 0, 16)}
@@ -384,7 +386,7 @@ function refresh(): void {
   text("#right-level", `${field("hearThroughRightLevel") ?? "—"} / 127`);
   const silentPair = field("hearThroughLeftLevel") === 0 && field("hearThroughRightLevel") === 0;
   element("#balance-note").hidden = !silentPair;
-  text("#balance-note", "Оба уровня L/R равны нулю. Для баланса задайте ненулевую пару через консоль: !balance L R.");
+  text("#balance-note", "Оба уровня HT L/R равны нулю. Для баланса HT задайте ненулевую пару через консоль: !balance L R.");
   disabled("#reset-balance", !(free && caps?.hearThroughBalance && balance !== undefined));
   disabled("#sleep", !(free && caps?.sleep && level !== undefined));
 
