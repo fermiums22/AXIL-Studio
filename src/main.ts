@@ -7,7 +7,7 @@ import type { AxilTransport, OtaProgress, TelemetrySnapshot, TransportEvent } fr
 type Tab = "remote" | "equalizer" | "console";
 const tabs: readonly Tab[] = ["remote", "equalizer", "console"];
 const eqLabels = ["100 Hz", "400 Hz", "1 kHz", "4 kHz", "10 kHz"];
-const voiceLabels = ["Включение наушников", "Выключение наушников", "Режим сопряжения", "Очистка списка пар", "Bluetooth подключён", "Bluetooth отключён", "Минимум громкости музыки", "Увеличение громкости HT", "Уменьшение громкости HT", "Включение HT", "Выключение HT", "Максимум громкости HT", "Минимум громкости HT", "Максимум громкости музыки"];
+const voiceLabels = ["Headset power on", "Headset power off", "Pairing mode", "Clear paired devices", "Bluetooth connected", "Bluetooth disconnected", "Minimum music volume", "HT volume up", "HT volume down", "HT on", "HT off", "Maximum HT volume", "Minimum HT volume", "Maximum music volume"];
 type Side = "left" | "right";
 type Direction = "up" | "down" | "left" | "right" | "center";
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -43,7 +43,7 @@ const state = {
   unlocking: false,
   deviceSelected: false,
   bluetoothAvailable: undefined as boolean | undefined,
-  deviceName: "Наушники не подключены",
+  deviceName: "Headset not connected",
   file: null as File | null,
 };
 
@@ -53,7 +53,7 @@ function powerIcon(): string {
 
 function earcup(side: Side): string {
   const label = side === "left" ? "L" : "R";
-  return `<div class="earcup-button ${side}" id="sensor-${side}" role="img" aria-label="${label}: нет данных сенсора">
+  return `<div class="earcup-button ${side}" id="sensor-${side}" role="img" aria-label="${label}: no sensor data">
     <span class="sensor-glow" aria-hidden="true"></span>
     <svg class="earcup-svg" viewBox="0 0 90 116" aria-hidden="true">
       <defs><linearGradient id="earcup-body-${side}" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3d4942"/><stop offset=".5" stop-color="#29332d"/><stop offset="1" stop-color="#202822"/></linearGradient></defs>
@@ -116,8 +116,8 @@ function setTouchHeld(side: Side, held: boolean): void {
 }
 
 function joystick(): string {
-  const labels: Record<Direction, string> = { up: "Вверх", down: "Вниз", left: "Влево", right: "Вправо", center: "Нажать джойстик" };
-  return `<div class="joystick" role="img" aria-label="Джойстик: нет данных">
+  const labels: Record<Direction, string> = { up: "Up", down: "Down", left: "Left", right: "Right", center: "Press joystick" };
+  return `<div class="joystick" role="img" aria-label="Joystick: no data">
     <span class="sensor-glow" id="joystick-glow" aria-hidden="true"></span><span class="joystick-base" aria-hidden="true"><span id="joystick-cap"></span></span>
     ${(Object.keys(labels) as Direction[]).map(direction => `<span class="joystick-key ${direction}" data-joystick="${direction}" aria-hidden="true">${direction === "center" ? "" : '<span></span>'}</span>`).join("")}
   </div>`;
@@ -153,9 +153,9 @@ function range(id: string, title: string, min: number, max: number): string {
 function render(): void {
   app.innerHTML = `<div class="studio">
     <header class="connection-header">
-      <div class="connection-title"><strong>AXIL Studio</strong><span id="connection-state" role="status">Не подключено</span></div>
-      <form class="unlock-form" id="unlock-form" method="post"><input id="access-username" name="username" type="text" value="AXIL Studio" autocomplete="username" readonly hidden /><label class="visually-hidden" for="access-key">Пароль доступа</label><input id="access-key" name="password" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false" placeholder="Пароль доступа" aria-describedby="connection-hint" /><button class="button" id="unlock-device" type="submit">Открыть</button></form>
-      <div class="connection-actions"><button class="button" id="connect-ble" type="button">Подключить наушники</button><button class="text-button" id="disconnect" type="button" hidden>Отключить</button></div>
+      <div class="connection-title"><strong>AXIL Studio</strong><span id="connection-state" role="status">Not connected</span></div>
+      <form class="unlock-form" id="unlock-form" method="post"><input id="access-username" name="username" type="text" value="AXIL Studio" autocomplete="username" readonly hidden /><label class="visually-hidden" for="access-key">Access password</label><input id="access-key" name="password" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false" placeholder="Access password" aria-describedby="connection-hint" /><button class="button" id="unlock-device" type="submit">Unlock</button></form>
+      <div class="connection-actions"><button class="button" id="connect-ble" type="button">Connect headset</button><button class="text-button" id="disconnect" type="button" hidden>Disconnect</button></div>
       <p class="connection-platform" id="platform-status"></p>
       <p class="connection-hint" id="connection-hint"></p>
     </header>
@@ -166,59 +166,59 @@ function render(): void {
           <strong class="ht-state">HT —</strong>
           <div class="firmware-version"><span>Firmware</span><strong id="firmware-version">—</strong></div>
         </div>
-        <section class="sensor-preview" aria-label="Органы управления наушников"><div class="input-state-row"><div class="sensor-pair">${earcup("left")}${earcup("right")}</div>${joystick()}</div><p id="input-status">Сенсоры и джойстик · нет данных</p></section>
+        <section class="sensor-preview" aria-label="Headset controls"><div class="input-state-row"><div class="sensor-pair">${earcup("left")}${earcup("right")}</div>${joystick()}</div><p id="input-status">Sensors and joystick · no data</p></section>
         ${range("ht-level", "HT level", 0, 5)}
         <section class="control balance-control" aria-labelledby="balance-label">
           <div class="control-label"><label id="balance-label" for="ht-balance">HT balance</label><output id="ht-balance-value" for="ht-balance">—</output></div>
           <div class="balance-track"><input id="ht-balance" type="range" min="-127" max="127" value="0" disabled /></div>
-          <div class="balance-values"><span>L <strong id="left-level">— / 127</strong></span><button class="text-button" id="reset-balance" type="button" title="Выровнять HT L/R" disabled>Reset</button><span>R <strong id="right-level">— / 127</strong></span></div>
-          <p class="balance-note">Только баланс HT (окружающего звука). Баланс музыки настраивается на устройстве-источнике.</p>
-          <p class="balance-note">0 на ползунке — центр (L = R). Уровни L/R: 0 — минимум, 127 — максимум.</p>
+          <div class="balance-values"><span>L <strong id="left-level">— / 127</strong></span><button class="text-button" id="reset-balance" type="button" title="Center HT L/R" disabled>Reset</button><span>R <strong id="right-level">— / 127</strong></span></div>
+          <p class="balance-note">HT (ambient sound) balance only. Adjust music balance on the source device.</p>
+          <p class="balance-note">Slider 0 = center (L = R). L/R levels: 0 = minimum, 127 = maximum.</p>
           <p class="balance-note" id="balance-note" hidden></p>
         </section>
         ${range("music-level", "Music level", 0, 16)}
-        <section class="microphone-test" aria-label="Проверка разговорного микрофона">
-          <div class="microphone-actions"><button class="button" id="microphone-toggle" type="button" aria-label="Записать или остановить тест микрофона AXIL" aria-describedby="microphone-warning" aria-pressed="false">Записать 5 секунд / стоп</button><button class="button" id="microphone-play" type="button" disabled>Прослушать / стоп</button></div>
-          <p id="microphone-note" role="status">Тест разговорного микрофона AXIL</p>
+        <section class="microphone-test" aria-label="Call microphone test">
+          <div class="microphone-actions"><button class="button" id="microphone-toggle" type="button" aria-label="Record or stop the AXIL microphone test" aria-describedby="microphone-warning" aria-pressed="false">Record 5 seconds / stop</button><button class="button" id="microphone-play" type="button" disabled>Play / stop</button></div>
+          <p id="microphone-note" role="status">AXIL call microphone test</p>
         </section>
-        <section class="lower-controls" aria-label="Уровни и обновление">
+        <section class="lower-controls" aria-label="Levels and update">
           <div class="meters">
-            <div class="meter-block"><span class="meter-label charging-label" id="charging-state" title="Зарядка: нет данных">Battery<svg id="charger-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M7 2v4m6-4v4M5 6h10v3a5 5 0 0 1-5 5v4M5 9h10"/></svg></span><div id="battery-meter" class="meter-rail battery" role="meter" aria-label="Заряд батареи: нет данных" aria-valuemin="0" aria-valuemax="100"><span></span><svg id="battery-bolt" viewBox="0 0 16 28" aria-hidden="true" hidden><path d="M9 1 2 15h5l-1 12 8-16H9Z"/></svg></div><strong class="meter-reading" id="battery-reading">—</strong><span class="meter-unit" id="charge-description">Нет данных</span></div>
+            <div class="meter-block"><span class="meter-label charging-label" id="charging-state" title="Charging: no data">Battery<svg id="charger-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M7 2v4m6-4v4M5 6h10v3a5 5 0 0 1-5 5v4M5 9h10"/></svg></span><div id="battery-meter" class="meter-rail battery" role="meter" aria-label="Battery level: no data" aria-valuemin="0" aria-valuemax="100"><span></span><svg id="battery-bolt" viewBox="0 0 16 28" aria-hidden="true" hidden><path d="M9 1 2 15h5l-1 12 8-16H9Z"/></svg></div><strong class="meter-reading" id="battery-reading">—</strong><span class="meter-unit" id="charge-description">No data</span></div>
           </div>
           <div class="device-actions">
             <button class="button sleep-button" id="sleep" type="button" disabled><span aria-hidden="true">☾</span> Sleep</button>
             <div class="update-controls">
               <label class="file-button" for="firmware-file">Choose firmware <span aria-hidden="true">＋</span></label>
               <input class="visually-hidden" id="firmware-file" type="file" accept=".bin" />
-              <p class="file-name">Файл не выбран</p>
+              <p class="file-name">No file selected</p>
               <button class="button update-button" id="update-firmware" type="button" disabled><span id="update-label">Update OTA</span><span id="update-arrow" aria-hidden="true">↑</span></button>
-              <div class="ota-progress" id="ota-progress" hidden><span id="ota-progress-label" role="status"></span><div id="ota-transfer-metrics" title="Средняя скорость передачи с начала OTA, включая ожидание устройства."></div><button class="text-button" id="cancel-update" type="button">Прервать</button></div>
+              <div class="ota-progress" id="ota-progress" hidden><span id="ota-progress-label" role="status"></span><div id="ota-transfer-metrics" title="Average transfer rate since OTA started, including device waits."></div><button class="text-button" id="cancel-update" type="button">Cancel</button></div>
             </div>
           </div>
         </section>
-        <p class="capability-note" id="microphone-warning">Подключите AXIL для звонков в Bluetooth ОС и разрешите микрофон в настройках сайта. Запись остаётся в браузере. Во время теста музыка может прерваться.</p>
+        <p class="capability-note" id="microphone-warning">Connect AXIL for calls in your OS Bluetooth settings and allow microphone access for this site. The recording stays in your browser. Music may pause during the test.</p>
         <p class="capability-note" id="capability-note"></p>
       </section>
       <section class="equalizer-panel" id="equalizer-panel" role="tabpanel" aria-labelledby="equalizer-tab" hidden>
-        <h1>Эквалайзер</h1>
-        <p class="capability-note">Bluetooth-музыка · ±6 dB. Настройки EQ сохраняются в обновлённой прошивке. Отключение возвращает штатный звук. HT использует отдельный аналоговый тракт.</p>
-        <label class="voice-option"><input id="eq-enabled" type="checkbox" disabled />Включить эквалайзер</label>
-        <p id="eq-status" class="capability-note">Нет данных</p>
+        <h1>Equalizer</h1>
+        <p class="capability-note">Bluetooth music · ±6 dB. Updated firmware saves EQ settings. Disabling EQ restores the board sound profile. HT uses a separate analog path.</p>
+        <label class="voice-option"><input id="eq-enabled" type="checkbox" disabled />Enable equalizer</label>
+        <p id="eq-status" class="capability-note">No data</p>
         ${eqLabels.map((label, index) => range(`eq-${index}`, label, -6, 6)).join("")}
-        <h2>Озвучка действий</h2>
-        <p class="capability-note" id="voice-status">Нет данных</p>
+        <h2>Voice prompts</h2>
+        <p class="capability-note" id="voice-status">No data</p>
         <div class="voice-options">${voiceLabels.map((label, index) => `<label class="voice-option"><input id="voice-${index}" type="checkbox" disabled />${label}</label>`).join("")}</div>
       </section>
       <section class="console-panel" id="console-panel" role="tabpanel" aria-labelledby="console-tab" hidden>
-        <div class="console-heading"><h1>Console</h1><button class="text-button" id="save-console" type="button" title="Сохранить до 5000 строк в текстовый файл" disabled>Сохранить консоль</button><button class="text-button" id="clear-console" type="button">Clear</button></div>
-        <p class="console-hint" id="console-hint">Подключите наушники для отправки команд.</p>
-        <div id="console-output" class="console-output" role="log" aria-label="Консоль наушников" aria-live="off"><p class="console-empty">Ответы устройства появятся здесь.</p></div>
-        <form id="console-form"><div class="command-row"><button class="button command-picker-toggle" id="open-commands" type="button" aria-label="Выбрать команду" title="Список команд" aria-haspopup="dialog" aria-controls="command-dialog" disabled>+</button><label class="visually-hidden" for="console-command">Команда</label><input id="console-command" autocomplete="off" spellcheck="false" placeholder="!status" aria-describedby="selected-command-hint" maxlength="160" disabled /><button class="button" id="send-command" type="submit" disabled>Send</button></div><p class="console-hint command-hint" id="selected-command-hint" hidden></p></form>
+        <div class="console-heading"><h1>Console</h1><button class="text-button" id="save-console" type="button" title="Save up to 5000 lines to a text file" disabled>Save console</button><button class="text-button" id="clear-console" type="button">Clear</button></div>
+        <p class="console-hint" id="console-hint">Connect the headset to send commands.</p>
+        <div id="console-output" class="console-output" role="log" aria-label="Headset console" aria-live="off"><p class="console-empty">Device replies will appear here.</p></div>
+        <form id="console-form"><div class="command-row"><button class="button command-picker-toggle" id="open-commands" type="button" aria-label="Choose command" title="Command list" aria-haspopup="dialog" aria-controls="command-dialog" disabled>+</button><label class="visually-hidden" for="console-command">Command</label><input id="console-command" autocomplete="off" spellcheck="false" placeholder="!status" aria-describedby="selected-command-hint" maxlength="160" disabled /><button class="button" id="send-command" type="submit" disabled>Send</button></div><p class="console-hint command-hint" id="selected-command-hint" hidden></p></form>
       </section>
     </main>
-    <dialog class="command-dialog" id="command-dialog" aria-labelledby="command-dialog-title"><div class="command-dialog-heading"><h2 id="command-dialog-title">Команды</h2><button class="text-button" id="close-commands" type="button" aria-label="Закрыть список команд">×</button></div><p class="console-hint">Выбор подставляет команду. Отправка — кнопкой Send.</p><div class="command-list" id="command-list"></div></dialog>
+    <dialog class="command-dialog" id="command-dialog" aria-labelledby="command-dialog-title"><div class="command-dialog-heading"><h2 id="command-dialog-title">Commands</h2><button class="text-button" id="close-commands" type="button" aria-label="Close command list">×</button></div><p class="console-hint">Select a command to fill the input. Press Send to execute it.</p><div class="command-list" id="command-list"></div></dialog>
     <p class="notice" id="notice" role="status" hidden></p>
-    <nav class="tabs" role="tablist" aria-label="Page"><button id="remote-tab" type="button" role="tab" data-tab="remote" aria-selected="true" aria-controls="remote-panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14M9 3v6M15 9v6M9 15v6"/></svg>Remote</button><button id="equalizer-tab" type="button" role="tab" data-tab="equalizer" aria-selected="false" aria-controls="equalizer-panel" tabindex="-1">Эквалайзер</button><button id="console-tab" type="button" role="tab" data-tab="console" aria-selected="false" aria-controls="console-panel" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m5 6 6 6-6 6M13 18h6"/></svg>Console</button></nav>
+    <nav class="tabs" role="tablist" aria-label="Page"><button id="remote-tab" type="button" role="tab" data-tab="remote" aria-selected="true" aria-controls="remote-panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14M9 3v6M15 9v6M9 15v6"/></svg>Remote</button><button id="equalizer-tab" type="button" role="tab" data-tab="equalizer" aria-selected="false" aria-controls="equalizer-panel" tabindex="-1">Equalizer</button><button id="console-tab" type="button" role="tab" data-tab="console" aria-selected="false" aria-controls="console-panel" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m5 6 6 6-6 6M13 18h6"/></svg>Console</button></nav>
   </div>`;
   bindEvents();
   refresh();
@@ -241,7 +241,7 @@ function platformName(): string {
   if (/iPad/i.test(agent) || /Mac/i.test(navigator.platform) && navigator.maxTouchPoints > 1) return "iPad";
   if (/Windows/i.test(agent) || /Win/i.test(navigator.platform)) return "Windows";
   if (/Mac/i.test(navigator.platform)) return "macOS";
-  return "Это устройство";
+  return "This device";
 }
 
 async function refreshBluetoothAvailability(): Promise<void> {
@@ -273,7 +273,7 @@ function log(value: string, direction = "·"): void {
   const time = document.createElement("time");
   time.textContent = new Date().toLocaleTimeString("en-GB", { hour12: false });
   const body = document.createElement("span");
-  body.textContent = `${direction} ${value.length > 4096 ? `${value.slice(0, 4096)}… [строка сокращена]` : value}`;
+  body.textContent = `${direction} ${value.length > 4096 ? `${value.slice(0, 4096)}… [line truncated]` : value}`;
   const plain = `${time.textContent} ${body.textContent}`;
   consoleLines.push(plain);
   consoleCharacters += plain.length;
@@ -291,7 +291,7 @@ function log(value: string, direction = "·"): void {
 function saveConsole(): void {
   if (!consoleLines.length) return;
   const date = new Date().toISOString();
-  const header = `AXIL Studio Console\r\nExported UTC: ${date}\r\nConsole timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}\r\nPlatform: ${platformName()}\r\n${discardedConsoleLines ? `Ранних строк удалено: ${discardedConsoleLines}\r\n` : ""}\r\n`;
+  const header = `AXIL Studio Console\r\nExported UTC: ${date}\r\nConsole timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}\r\nPlatform: ${platformName()}\r\n${discardedConsoleLines ? `Earlier lines discarded: ${discardedConsoleLines}\r\n` : ""}\r\n`;
   const url = URL.createObjectURL(new Blob(["\ufeff", header, consoleLines.join("\r\n"), "\r\n"], { type: "text/plain;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
@@ -326,7 +326,7 @@ function balanceValue(): number | undefined {
 
 async function setBalance(current: AxilTransport, value: number): Promise<void> {
   const actualLeft = field("hearThroughLeftLevel"), actualRight = field("hearThroughRightLevel");
-  if (actualLeft === undefined || actualRight === undefined || Math.max(actualLeft, actualRight) === 0) throw new Error("Ненулевые уровни L/R ещё не получены.");
+  if (actualLeft === undefined || actualRight === undefined || Math.max(actualLeft, actualRight) === 0) throw new Error("Nonzero L/R levels have not been received yet.");
   const reference = Math.max(actualLeft, actualRight);
   const left = Math.round(reference * (127 - Math.max(0, value)) / 127);
   const right = Math.round(reference * (127 + Math.min(0, value)) / 127);
@@ -344,14 +344,14 @@ function refresh(): void {
   element("#unlock-form").hidden = unlocked;
   disabled("#unlock-device", state.unlocking);
   element<HTMLInputElement>("#access-key").readOnly = state.unlocking;
-  text("#unlock-device", state.unlocking ? "Открываем…" : "Открыть");
+  text("#unlock-device", state.unlocking ? "Unlocking…" : "Unlock");
   element("#connect-ble").hidden = active;
   element("#disconnect").hidden = !active;
   disabled("#disconnect", state.updating || state.busy);
-  text("#connection-state", active ? "Bluetooth LE · подключено" : transport?.state === "disconnecting" ? "Отключение…" : transitioning ? state.deviceSelected ? "Наушники выбраны" : "Выбор устройства…" : "Устройство не выбрано");
-  const bluetoothStatus = !window.isSecureContext ? "Bluetooth: нужен HTTPS" : !ble ? "Браузер не поддерживает Bluetooth" : state.bluetoothAvailable === false ? "Bluetooth выключен или недоступен" : "Web Bluetooth доступен";
+  text("#connection-state", active ? "Bluetooth LE · connected" : transport?.state === "disconnecting" ? "Disconnecting…" : transitioning ? state.deviceSelected ? "Headset selected" : "Selecting device…" : "No device selected");
+  const bluetoothStatus = !window.isSecureContext ? "Bluetooth: HTTPS required" : !ble ? "Browser does not support Bluetooth" : state.bluetoothAvailable === false ? "Bluetooth is off or unavailable" : "Web Bluetooth available";
   text("#platform-status", `${platformName()} · ${bluetoothStatus}`);
-  text("#connection-hint", active || state.deviceSelected ? state.deviceName : !unlocked ? "Введите пароль доступа. Его можно сохранить в менеджере паролей браузера." : !window.isSecureContext ? "Для подключения откройте страницу по HTTPS или на localhost." : !ble ? "Этот браузер не предоставляет доступ к Bluetooth. Используйте Chrome или Edge." : "Список покажет все ближайшие BLE-устройства (ограничение Web Bluetooth) — выбирайте наушники с именем AXIL MX II PRO. Это отдельный инженерный канал (BLE GATT) — не звук: музыка и звонки идут по обычному сопряжению Bluetooth в ОС и Studio их не подключает.");
+  text("#connection-hint", active || state.deviceSelected ? state.deviceName : !unlocked ? "Enter the access password. You can save it in your browser's password manager." : !window.isSecureContext ? "Open this page over HTTPS or on localhost to connect." : !ble ? "This browser does not provide Bluetooth access. Use Chrome or Edge." : "The list shows all nearby BLE devices (a Web Bluetooth limitation). Choose the AXIL MX II PRO headset. This is a separate control connection (BLE GATT). Music and calls use normal OS Bluetooth pairing, which Studio does not establish.");
 
   const ht = field("hearThroughEnabled");
   const level = field("hearThroughLevel");
@@ -372,7 +372,7 @@ function refresh(): void {
   const eqAvailable = !!(free && caps?.equalizer && eqEnabled !== undefined && eqGains);
   element<HTMLInputElement>("#eq-enabled").checked = eqEnabled === true;
   disabled("#eq-enabled", !eqAvailable);
-  text("#eq-status", eqEnabled === undefined ? active && !caps?.equalizer ? "Не поддерживается этой прошивкой" : "Нет данных" : eqEnabled ? "EQ включён · усиление полос в dB" : "Штатный звук");
+  text("#eq-status", eqEnabled === undefined ? active && !caps?.equalizer ? "Not supported by this firmware" : "No data" : eqEnabled ? "EQ enabled · band gains in dB" : "Board sound profile");
   eqLabels.forEach((_, index) => updateRange(`eq-${index}`, eqGains?.[index], eqAvailable && eqEnabled === true));
   const voiceMask = field("voicePromptMask");
   voiceLabels.forEach((_, index) => {
@@ -381,12 +381,12 @@ function refresh(): void {
     input.indeterminate = voiceMask === undefined;
     input.disabled = !(free && caps?.voicePrompts && voiceMask !== undefined);
   });
-  text("#voice-status", voiceMask === undefined ? active && !caps?.voicePrompts ? "Не поддерживается этой прошивкой" : "Нет данных" : "Галочка включает озвучку. Сохраняется в наушниках. Заряд и входящий звонок — без изменений.");
+  text("#voice-status", voiceMask === undefined ? active && !caps?.voicePrompts ? "Not supported by this firmware" : "No data" : "Check to enable a voice prompt. Saved on the headset. Charging and incoming-call sounds are unchanged.");
   text("#left-level", `${field("hearThroughLeftLevel") ?? "—"} / 127`);
   text("#right-level", `${field("hearThroughRightLevel") ?? "—"} / 127`);
   const silentPair = field("hearThroughLeftLevel") === 0 && field("hearThroughRightLevel") === 0;
   element("#balance-note").hidden = !silentPair;
-  text("#balance-note", "Оба уровня HT L/R равны нулю. Для баланса HT задайте ненулевую пару через консоль: !balance L R.");
+  text("#balance-note", "Both HT L/R levels are zero. Set a nonzero HT pair through the console: !balance L R.");
   disabled("#reset-balance", !(free && caps?.hearThroughBalance && balance !== undefined));
   disabled("#sleep", !(free && caps?.sleep && level !== undefined));
 
@@ -394,25 +394,25 @@ function refresh(): void {
   const batteryMeter = element("#battery-meter");
   batteryMeter.querySelector<HTMLElement>("span")!.style.setProperty("--level", `${battery ?? 0}%`);
   text("#battery-reading", battery === undefined ? "—" : `${battery}%`);
-  batteryMeter.setAttribute("aria-label", battery === undefined ? "Заряд батареи: нет данных" : "Заряд батареи");
+  batteryMeter.setAttribute("aria-label", battery === undefined ? "Battery level: no data" : "Battery level");
   if (battery === undefined) batteryMeter.removeAttribute("aria-valuenow");
   else batteryMeter.setAttribute("aria-valuenow", String(battery));
   const charge = field("dc5vPresent");
-  const chargeLabel = charge === undefined ? "Нет данных" : charge ? "Подключена" : "Без зарядки";
+  const chargeLabel = charge === undefined ? "No data" : charge ? "Connected" : "Not charging";
   element("#charging-state").classList.toggle("active", charge === true);
-  element("#charging-state").title = `Зарядка: ${chargeLabel.toLowerCase()}`;
+  element("#charging-state").title = `Charging: ${chargeLabel.toLowerCase()}`;
   element("#battery-bolt").toggleAttribute("hidden", charge !== true);
   text("#charge-description", chargeLabel);
 
   disabled("#microphone-toggle", state.updating);
 
   const inputsFresh = !!caps?.inputs && field("inputSequence", 3000) !== undefined;
-  text("#input-status", inputsFresh ? "Сенсоры и джойстик · состояние наушников" : active && !caps?.inputs ? "Сенсоры и джойстик · нужны новые интерфейсы прошивки" : "Сенсоры и джойстик · нет данных");
+  text("#input-status", inputsFresh ? "Sensors and joystick · headset state" : active && !caps?.inputs ? "Sensors and joystick · newer firmware interfaces required" : "Sensors and joystick · no data");
   if (!inputsFresh) {
     if (joystickHeld) setJoystickPressed(joystickHeld, false);
-    element(".joystick").setAttribute("aria-label", "Джойстик: нет данных");
-    element("#sensor-left").setAttribute("aria-label", "L: нет данных сенсора");
-    element("#sensor-right").setAttribute("aria-label", "R: нет данных сенсора");
+    element(".joystick").setAttribute("aria-label", "Joystick: no data");
+    element("#sensor-left").setAttribute("aria-label", "L: no sensor data");
+    element("#sensor-right").setAttribute("aria-label", "R: no sensor data");
   }
   const consoleReady = !!(free && caps?.engineeringConsole);
   disabled("#console-command", !consoleReady);
@@ -420,7 +420,7 @@ function refresh(): void {
   const catalogAvailable = consoleReady && transport && getConsoleCommands(transport.kind, caps).some(item => item.available);
   disabled("#open-commands", !catalogAvailable);
   if (!catalogAvailable) element<HTMLDialogElement>("#command-dialog").close();
-  text("#console-hint", state.updating ? "Во время OTA команды приостановлены." : !active ? "Подключите наушники для отправки команд." : !caps?.engineeringConsole ? "Эта прошивка не поддерживает консоль по выбранному подключению." : "Команды отправляются на устройство. Например: !help, !status.");
+  text("#console-hint", state.updating ? "Commands are paused during OTA." : !active ? "Connect the headset to send commands." : !caps?.engineeringConsole ? "This firmware does not support the console over this connection." : "Commands are sent to the device. Examples: !help, !status.");
   disabled("#firmware-file", !unlocked || state.updating || state.fileLoading);
   element(".file-button").classList.toggle("disabled", !unlocked || state.updating || state.fileLoading);
   disabled("#update-firmware", !(free && caps?.ota && firmwareBytes && !state.fileLoading) || state.otaStatus === "complete");
@@ -431,10 +431,10 @@ function refresh(): void {
   update.style.setProperty("--ota-progress", String(state.otaPercent / 100));
   const updateLabel = state.otaStatus === "error" ? "Error" : state.otaStatus === "complete" ? "100%" : state.otaStatus === "working" ? `${state.otaPercent.toFixed(1).replace(/\.0$/, "")}%` : "Update OTA";
   text("#update-label", updateLabel);
-  update.setAttribute("aria-label", `Обновление OTA: ${updateLabel}`);
+  update.setAttribute("aria-label", `OTA update: ${updateLabel}`);
   element("#update-arrow").hidden = state.otaStatus !== "idle";
   if (state.otaStatus !== "idle") refreshOtaMetrics();
-  text("#capability-note", !active ? "Подключение нужно для чтения состояния. OTA использует образ AXIL_OTA.bin." : !state.negotiated ? "Проверяем возможности прошивки…" : !caps?.hearThroughBalance ? "Режим совместимости: доступны только поддерживаемые функции. OTA можно использовать для обновления старой версии." : level === undefined && !state.updating ? "Состояние устройства устарело или ещё не получено. Управление приостановлено." : "");
+  text("#capability-note", !active ? "Connect to read device state. OTA uses AXIL_OTA.bin." : !state.negotiated ? "Checking firmware capabilities…" : !caps?.hearThroughBalance ? "Compatibility mode: only supported features are available. Use OTA to update an older version." : level === undefined && !state.updating ? "Device state is stale or has not been received. Controls are paused." : "");
 }
 
 function receive(event: TransportEvent): void {
@@ -451,14 +451,14 @@ function receive(event: TransportEvent): void {
       touchAnimations.clear();
       if (joystickHeld) setJoystickPressed(joystickHeld, false);
       window.clearTimeout(joystickTapTimer);
-      log("Соединение закрыто.");
-      if (state.updating) message("Связь прервана во время OTA. Результат обновления не подтверждён.", true);
+      log("Connection closed.");
+      if (state.updating) message("Connection lost during OTA. The update result is unconfirmed.", true);
       if (state.updating) state.otaStatus = "error";
     }
   } else if (event.type === "device") {
     state.deviceName = event.device.name;
     state.deviceSelected = true;
-    log(`Выбрано устройство: ${event.device.name}`);
+    log(`Device selected: ${event.device.name}`);
   } else if (event.type === "capabilities") state.negotiated = true;
   else if (event.type === "line") log(event.line, event.direction === "tx" ? "→" : "←");
   else if (event.type === "ota-log") log(event.line);
@@ -485,10 +485,10 @@ function receive(event: TransportEvent): void {
       const direction = snapshot.joystickDirection;
       if (joystickHeld && joystickHeld !== direction) setJoystickPressed(joystickHeld, false);
       if (direction !== "none") setJoystickPressed(direction, true);
-      element(".joystick").setAttribute("aria-label", direction === "none" ? "Джойстик: отпущен" : `Джойстик: ${direction}`);
+      element(".joystick").setAttribute("aria-label", direction === "none" ? "Joystick: released" : `Joystick: ${direction}`);
     }
-    if (snapshot.touchLeft !== undefined) element("#sensor-left").setAttribute("aria-label", `L: ${snapshot.touchLeft ? "касание" : "отпущен"}`);
-    if (snapshot.touchRight !== undefined) element("#sensor-right").setAttribute("aria-label", `R: ${snapshot.touchRight ? "касание" : "отпущен"}`);
+    if (snapshot.touchLeft !== undefined) element("#sensor-left").setAttribute("aria-label", `L: ${snapshot.touchLeft ? "touched" : "released"}`);
+    if (snapshot.touchRight !== undefined) element("#sensor-right").setAttribute("aria-label", `R: ${snapshot.touchRight ? "touched" : "released"}`);
     latestInputs = { ...latestInputs, ...Object.fromEntries(Object.entries(snapshot).filter(([, value]) => value !== undefined)) };
   }
   refresh();
@@ -496,7 +496,7 @@ function receive(event: TransportEvent): void {
 
 async function connect(): Promise<void> {
   if (!isDeviceRuntimeUnlocked() || state.connecting || connected() || state.busy || state.updating) return;
-  log("Bluetooth LE: выбор устройства и подключение…");
+  log("Bluetooth LE: selecting and connecting…");
   state.connecting = true;
   state.negotiated = false;
   state.telemetry = {};
@@ -516,7 +516,7 @@ async function connect(): Promise<void> {
     refresh();
     await current.connect();
     state.negotiated = true;
-    log("Bluetooth LE: подключено, возможности прошивки проверены.");
+    log("Bluetooth LE: connected; firmware capabilities checked.");
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     message(detail, true);
@@ -537,12 +537,12 @@ async function command(operation: (current: AxilTransport) => Promise<void>, suc
   refresh();
   try {
     await operation(current);
-    if (action) log(`${action}: выполнено.`);
+    if (action) log(`${action}: done.`);
     if (transport === current && success) message(success);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     if (transport === current) message(detail, true);
-    log(`${action || "Команда"}: ${detail}`, "!");
+    log(`${action || "Command"}: ${detail}`, "!");
   } finally {
     state.busy = false;
     editingRanges.clear();
@@ -561,25 +561,25 @@ async function selectFirmware(): Promise<void> {
   state.file = file;
   firmwareBytes = undefined;
   state.fileLoading = !!file;
-  text(".file-name", file ? `${file.name} · проверка…` : "Файл не выбран");
+  text(".file-name", file ? `${file.name} · validating…` : "No file selected");
   element(".file-name").title = file?.name ?? "";
   message("");
   refresh();
   if (!file) return;
   try {
-    if (file.size > OTA_IMAGE_MAX_SIZE) throw new Error(`Образ OTA слишком большой: максимум ${OTA_IMAGE_MAX_SIZE / 1024 / 1024} MiB.`);
+    if (file.size > OTA_IMAGE_MAX_SIZE) throw new Error(`OTA image is too large; maximum ${OTA_IMAGE_MAX_SIZE / 1024 / 1024} MiB.`);
     const bytes = new Uint8Array(await file.arrayBuffer());
     validateOtaImage(bytes);
     if (selection !== fileSelection) return;
     firmwareBytes = bytes;
     text(".file-name", `${file.name} · ${(file.size / 1024).toFixed(0)} KiB`);
-    log(`OTA: локальная проверка образа пройдена, ${bytes.length} байт.`);
+    log(`OTA: local image validation passed, ${bytes.length} bytes.`);
   } catch (error) {
     if (selection === fileSelection) {
-      text(".file-name", `${file.name} · неверный образ`);
+      text(".file-name", `${file.name} · invalid image`);
       const detail = error instanceof Error ? error.message : String(error);
       message(detail, true);
-      log(`OTA: образ отклонён до отправки: ${detail}`, "!");
+      log(`OTA: image rejected before transfer: ${detail}`, "!");
     }
   } finally {
     if (selection === fileSelection) state.fileLoading = false;
@@ -600,15 +600,15 @@ function refreshOtaMetrics(): void {
   const seconds = Math.floor(state.otaElapsedMs / 1000);
   const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
   const rate = state.otaTransferred > 0 && state.otaElapsedMs >= 1000
-    ? `≈ ${(state.otaTransferred / state.otaElapsedMs * 1000 / 1024).toFixed(1)} КиБ/с`
-    : "скорость —";
+    ? `≈ ${(state.otaTransferred / state.otaElapsedMs * 1000 / 1024).toFixed(1)} KiB/s`
+    : "rate —";
   const value = `${elapsed} · ${rate}`;
   if (element("#ota-transfer-metrics").textContent !== value) text("#ota-transfer-metrics", value);
 }
 
 function otaProgress(progress: OtaProgress): void {
   if (state.otaStatus !== "working") return;
-  const phase = { handshake: "Подготовка", transfer: "Передача", waiting: "Ожидание следующего блока", verify: "Ожидание подтверждения устройства", complete: "Ожидание подтверждения" }[progress.phase];
+  const phase = { handshake: "Preparing", transfer: "Transferring", waiting: "Waiting for the next block", verify: "Waiting for device confirmation", complete: "Waiting for confirmation" }[progress.phase];
   state.otaPercent = Math.max(0, Math.min(99.9, Number.isFinite(progress.percent) ? progress.percent : 0));
   state.otaTransferred = Math.max(0, Number.isFinite(progress.transferred) ? progress.transferred : 0);
   if (element("#ota-progress-label").textContent !== phase) text("#ota-progress-label", phase);
@@ -630,20 +630,20 @@ async function updateFirmware(): Promise<void> {
   element("#ota-progress").hidden = false;
   element("#cancel-update").hidden = false;
   otaProgress({ phase: "handshake", transferred: 0, total: bytes.length, percent: 0 });
-  message("Не выключайте наушники. После передачи нужно проверить перезапуск и версию.");
+  message("Keep the headset powered on. After transfer, verify reboot and firmware version.");
   refresh();
   try {
     await current.updateFirmware(bytes, otaProgress, otaAbort.signal);
     state.otaStatus = "complete";
     state.otaPercent = 100;
-    text("#ota-progress-label", "Образ принят устройством");
-    message("Устройство подтвердило приём образа. Переподключите наушники и проверьте версию после перезапуска.");
-    log("OTA: устройство подтвердило образ; новая версия ещё не проверена.");
+    text("#ota-progress-label", "Image accepted by the device");
+    message("The device confirmed the image. Reconnect and check the firmware version after reboot.");
+    log("OTA: device confirmed the image; the new firmware version has not been checked yet.");
   } catch (error) {
     state.otaStatus = "error";
     const detail = error instanceof Error ? error.message : String(error);
-    message(`OTA не завершено: ${detail}`, true);
-    text("#ota-progress-label", "Обновление не подтверждено");
+    message(`OTA incomplete: ${detail}`, true);
+    text("#ota-progress-label", "Update not confirmed");
     log(`OTA: ${detail}`, "!");
   } finally {
     refreshOtaMetrics();
@@ -671,7 +671,7 @@ function openCommandCatalog(): void {
   if (!commands.length) return;
   const list = element("#command-list");
   list.replaceChildren();
-  text("#command-dialog-title", "Команды BLE");
+  text("#command-dialog-title", "BLE commands");
   for (const item of commands) {
     const button = document.createElement("button");
     button.type = "button";
@@ -725,20 +725,20 @@ function bindEvents(): void {
     if (state.unlocking) return;
     const input = element<HTMLInputElement>("#access-key");
     const key = input.value.trim();
-    if (!key) { message("Введите пароль доступа."); input.focus(); return; }
+    if (!key) { message("Enter the access password."); input.focus(); return; }
     input.value = key;
     state.unlocking = true;
     message("");
     refresh();
     void unlockDeviceRuntime(key).then(() => {
       offerPasswordSave(element<HTMLFormElement>("#unlock-form"));
-      message("Доступ открыт. Можно подключить наушники.");
+      message("Access unlocked. You can connect the headset.");
     }).catch((error: unknown) => {
-      message(error instanceof Error ? error.message : "Не удалось открыть доступ.", true);
+      message(error instanceof Error ? error.message : "Could not unlock access.", true);
     }).finally(() => { input.value = ""; state.unlocking = false; refresh(); });
   });
   element("#connect-ble").addEventListener("click", () => { void connect(); });
-  element("#disconnect").addEventListener("click", () => { void command(current => current.disconnect(), "", "Отключение"); });
+  element("#disconnect").addEventListener("click", () => { void command(current => current.disconnect(), "", "Disconnect"); });
   app.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach(button => {
     button.addEventListener("click", () => selectTab(button.dataset.tab as Tab));
     button.addEventListener("keydown", event => {
@@ -750,7 +750,7 @@ function bindEvents(): void {
   });
   element("#ht-toggle").addEventListener("click", () => {
     const enabled = field("hearThroughEnabled");
-    if (enabled !== undefined) void command(current => current.setHearThroughEnabled(!enabled), "", `HT ${enabled ? "выключить" : "включить"}`);
+    if (enabled !== undefined) void command(current => current.setHearThroughEnabled(!enabled), "", `HT ${enabled ? "off" : "on"}`);
   });
   for (const id of ["ht-level", "ht-balance", "music-level"]) {
     const input = element<HTMLInputElement>(`#${id}`);
@@ -770,11 +770,11 @@ function bindEvents(): void {
     });
     for (const name of ["pointercancel", "blur"]) input.addEventListener(name, () => { if (!state.busy) { editingRanges.delete(id); refresh(); } });
   }
-  element("#reset-balance").addEventListener("click", () => { void command(current => setBalance(current, 0), "", "Выровнять HT L/R"); });
+  element("#reset-balance").addEventListener("click", () => { void command(current => setBalance(current, 0), "", "Center HT L/R"); });
   element("#eq-enabled").addEventListener("change", () => {
     const enabled = element<HTMLInputElement>("#eq-enabled").checked;
     const gains = field("equalizerGains");
-    if (gains) void command(current => current.setEqualizer(enabled, gains), "", `EQ ${enabled ? "включить" : "выключить"}`);
+    if (gains) void command(current => current.setEqualizer(enabled, gains), "", `EQ ${enabled ? "on" : "off"}`);
   });
   eqLabels.forEach((_, index) => {
     const id = `eq-${index}`, input = element<HTMLInputElement>(`#${id}`);
@@ -792,12 +792,12 @@ function bindEvents(): void {
     if (mask === undefined) return;
     const enabled = element<HTMLInputElement>(`#voice-${index}`).checked;
     const next = enabled ? mask | (1 << index) : mask & ~(1 << index);
-    void command(current => current.setVoicePrompts(next), "", `${label}: ${enabled ? "озвучивать" : "без озвучки"}`);
+    void command(current => current.setVoicePrompts(next), "", `${label}: ${enabled ? "voice prompt on" : "voice prompt off"}`);
   }));
-  element("#sleep").addEventListener("click", () => { void command(current => current.sleep(), "Команда Sleep подтверждена. Для следующего подключения может потребоваться включить наушники кнопкой.", "Sleep"); });
+  element("#sleep").addEventListener("click", () => { void command(current => current.sleep(), "Sleep command confirmed. You may need to turn on the headset with its button before reconnecting.", "Sleep"); });
   element("#firmware-file").addEventListener("change", () => { void selectFirmware(); });
   element("#update-firmware").addEventListener("click", () => { void updateFirmware(); });
-  element("#cancel-update").addEventListener("click", () => { log("OTA: запрошено прерывание."); otaAbort?.abort(); message("Прерываем OTA. Не считайте образ установленным до проверки версии."); });
+  element("#cancel-update").addEventListener("click", () => { log("OTA: cancellation requested."); otaAbort?.abort(); message("Cancelling OTA. Do not assume the image is installed until you check the firmware version."); });
   element("#save-console").addEventListener("click", saveConsole);
   element("#clear-console").addEventListener("click", () => { element("#console-output").replaceChildren(); consoleLines.length = 0; consoleCharacters = 0; discardedConsoleLines = 0; disabled("#save-console", true); });
   element("#open-commands").addEventListener("click", openCommandCatalog);

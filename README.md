@@ -1,106 +1,97 @@
 # AXIL Studio
 
-**[Открыть AXIL Studio](https://fermiums22.github.io/AXIL-Studio/)**
+**[Open AXIL Studio](https://fermiums22.github.io/AXIL-Studio/)**
 
-Страница настройки наушников в тёмной теме, рассчитанная прежде всего на телефон.
-Подключается к устройству по BLE; на компьютере также доступна инженерная UART-консоль.
-Значения появляются только после ответа наушников. Неподдерживаемые функции недоступны.
+Dark-themed headset settings page, designed primarily for phones. Connects over
+BLE; an engineering UART console is also available on a computer. Values appear
+only after a headset reply. Unsupported functions are disabled.
 
-На вкладке **Remote** находятся HT, уровень и баланс каналов, громкость музыки,
-тест разговорного микрофона, индикатор заряда, Sleep, выбор прошивки и Update.
-На вкладке **Console** — поле ручного ввода команд и журнал обмена. Кнопка **+**
-открывает список команд с описаниями и аргументами; выбор подставляет команду
-в поле ввода, отправка выполняется отдельно.
-Во время OTA Console показывает запросы блоков, время отправки, этапы и коды ошибок.
-Кнопка **Сохранить консоль** скачивает текстовый файл: его можно передать для разбора.
-На экране остаются последние 150 строк, в файле — до 5000 строк (не более 1 млн символов).
-Сохранить файл нужно до перезагрузки страницы или очистки Console; отправки на сервер нет.
+**Remote** contains HT, level/channel balance, music volume, call-microphone test,
+battery, Sleep, firmware selection and Update. **Console** has manual commands
+and a communication log. **+** opens descriptions/arguments; selection fills the
+input, sending is a separate action. During OTA the Console shows block requests,
+timings, phases and error codes. **Save console** downloads text for diagnostics:
+150 latest lines on screen, up to 5000 lines/one million characters in the file.
+Save before reload/clear; nothing is sent to a server.
 
-Касания сенсоров **L/R** на наушниках отображаются оранжевым свечением с затуханием.
-Джойстик показывает удерживаемое направление и центральное нажатие. При подключении
-зарядки рядом с **Battery** включается значок, внутри батареи появляется молния.
+Headset **L/R** touches show an orange fading glow. Joystick displays held direction
+and center press. Charging activates the icon beside **Battery** and a lightning
+bolt inside the battery.
 
-## Подключение и обновление
+## Connection and update
 
-1. Открыть страницу по ссылке выше. Для BLE на телефоне использовать Chrome на
-   Android; поддержка API и требование HTTPS описаны в
-   [документации Chrome](https://developer.chrome.com/docs/capabilities/bluetooth).
-2. Ввести выданный пароль доступа к библиотеке. Он проверяется локально и не
-   передаётся серверу. Можно сохранить пароль во встроенном менеджере браузера:
-   сохранение и автозаполнение зависят от его настроек. Сама страница не записывает
-   пароль в localStorage или sessionStorage.
-3. Нажать подключение BLE: браузер запросит доступ и предложит выбрать включённые
-   наушники. Индикатор показывает доступность Bluetooth для страницы, выбор
-   устройства и соединение. Страница не читает общий список аудиоустройств,
-   сопряжённых в настройках системы. Если браузер не поддерживает Bluetooth API,
-   это будет указано на странице. Для UART на компьютере
-   выбрать порт адаптера и скорость уже установленного приложения.
-4. Для обновления выбрать выданный OTA-файл `.bin`, затем **Update**. Проверка
-   контейнера выполняется до отправки. Кнопка показывает заполнение и процент
-   передачи; при ошибке — **Error**, после подтверждения — полностью зелёная.
-   Ползунки и отправка команд блокируются на время OTA; просмотр и сохранение
-   Console остаются доступны. Ожидание следующего блока не означает проверку всего
-   образа; рядом показываются время и средняя скорость.
-5. Дождаться подтверждения проверки образа устройством. Обрыв связи сам по себе
-   не означает успешное обновление. После перезапуска подключиться снова.
+1. Open the link above. For phone BLE use Chrome on Android; API/HTTPS requirements:
+   [Chrome documentation](https://developer.chrome.com/docs/capabilities/bluetooth).
+2. Enter the supplied library access password. It is checked locally, not sent to
+   a server. Browser password-manager saving/autofill depend on browser settings;
+   the page itself never stores the password in localStorage/sessionStorage.
+3. Click BLE connection. The browser asks for access/device selection. Indicators
+   show API availability, selection and connection. The page does not read the
+   general OS-paired audio-device list. Unsupported Bluetooth APIs are reported.
+   For desktop UART choose adapter port and the installed application's baud rate.
+4. Choose the supplied OTA `.bin`, then **Update**. Container validation precedes
+   transfer. The button shows fill/percentage, **Error** on failure, solid green
+   after confirmation. Sliders/commands are blocked during OTA; Console viewing/
+   export remain available. Waiting for the next block is not whole-image validation;
+   elapsed time/average rate are shown alongside.
+5. Wait for device image validation. Disconnect alone does not mean success.
+   Reconnect after reboot.
 
-Старая штатная прошивка может поддерживать OTA и базовые функции без новой
-телеметрии. Отсутствие новых возможностей не блокирует первое OTA-обновление.
-Совместимость конкретного установленного бинарника требует проверки на устройстве.
+Old stock firmware may support OTA/basic functions without new telemetry. Missing
+capabilities do not block first OTA. Actual installed-binary compatibility needs
+hardware verification.
 
-**Тест микрофона** записывает 5 секунд через разговорный микрофон AXIL в ОС;
-повторное нажатие завершает запись раньше. «Прослушать / стоп» воспроизводит запись
-через выход AXIL. Настоящий звонок не создаётся; запись остаётся в памяти страницы.
-Нужны обычное Bluetooth-подключение для звонков и разрешение микрофона: сайт запрашивает
-его при запуске теста, до поиска устройств. На Android выберите AXIL для звонков и
-воспроизведения в настройках телефона и отметьте это под кнопками теста. Если браузер
-называет вход просто Bluetooth, используется этот вход; воспроизведение без выбора
-аудиовыхода в браузере идёт через системный выход телефона. Сайт не может проверить
-его маршрут. Встроенный микрофон телефона/ПК не подставляется; если браузер не
-показывает AXIL или Bluetooth-вход, запись не запускается. На компьютере требуется
-выбор выхода AXIL (Chrome/Edge). Одного BLE недостаточно; музыка может прерваться.
-**Reset** выравнивает L/R
-по большему из текущих значений. **Sleep** разрывает BLE; пробуждение — кнопкой
-на наушниках. При активном звонке, воспроизведении или другом занятом состоянии
-устройство может отклонить команду.
+**Microphone test** records five seconds through OS AXIL call input; pressing again
+stops early. **Play / stop** plays through AXIL. No real call is initiated; recording
+stays in page memory. Normal Bluetooth call connection and microphone permission
+are required; permission is requested before device discovery. On Android choose
+AXIL for calls/playback in phone settings and confirm below the buttons. If input
+is labeled simply Bluetooth, that input is used after confirmation. Without browser
+output selection, playback follows the phone system output; the site cannot verify
+the route. Never substitute built-in phone/PC microphone. Recording does not start
+if AXIL/Bluetooth input is unavailable. Desktop requires AXIL output selection
+(Chrome/Edge). BLE alone is insufficient; music may pause.
 
-## Локальный запуск
+**Reset** centers HT L/R at the greater current level. Balance affects HT only;
+music balance is controlled at the source. **Sleep** disconnects BLE; wake with the
+headset button. Active call/playback or another busy state may reject it.
 
-Готовый `index.html` можно открыть браузером без установки инструментов.
-Для подключения устройств использовать опубликованный HTTPS-адрес или localhost.
-Для изменения исходников нужен [Node.js 22 LTS](https://nodejs.org/en/download):
+## Local development
+
+Open finished `index.html` without installing tools. Use published HTTPS or localhost
+for device access. Source editing requires [Node.js 22 LTS](https://nodejs.org/en/download):
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Сборка автономной страницы:
+Build the standalone page:
 
 ```sh
 npm run build
 ```
 
-Команда проверяет TypeScript, собирает приложение и обновляет `index.html`
-в корне репозитория. Сборка работает самостоятельно, без прошивки и SDK.
+This checks TypeScript, builds the app and updates root `index.html`. It builds
+independently of firmware/SDK.
 
-## Состав
+## Contents
 
-- `src/index.html`, `src/main.ts`, `src/styles.css` — исходники интерфейса;
-- `src/types.ts`, `src/transports.ts`, `src/ota.ts` — семантический API библиотеки;
-- `src/device-runtime.js`, `src/device-core.bin` — готовая библиотека и зашифрованный
-  WASM-модуль. Исходники протокола и его сборщик хранятся в закрытом репозитории;
-- `scripts/publish-standalone.mjs` — упаковка JS/CSS в один HTML, без сетевой публикации.
+- `src/index.html`, `src/main.ts`, `src/styles.css`: UI sources.
+- `src/types.ts`, `src/transports.ts`, `src/ota.ts`: semantic library API.
+- `src/device-runtime.js`, `src/device-core.bin`: compiled library/encrypted WASM;
+  protocol sources/build tools stay private.
+- `scripts/publish-standalone.mjs`: JS/CSS bundling into HTML, no network publication.
 
-В публичный репозиторий не входят исходники протокола, source map, прошивки, SDK,
-ключи, внутренние документы и журналы устройств. Выбранный файл передаётся
-непосредственно на наушники через BLE и не загружается на сервер.
+Public repository excludes protocol sources, source maps, firmware, SDKs, keys,
+internal documents and device logs. Selected images go directly to the headset
+over BLE, never to a server.
 
-## Публикация
+## Publication
 
-После `npm run build` сохранить исходники и обновлённый `index.html` в одном коммите.
-GitHub Pages публикует корень ветки `main`; сборка сама ничего не отправляет в GitHub.
-README ведёт на последнюю опубликованную версию, локальные правки видны после публикации.
+After `npm run build`, commit sources and updated `index.html` together. GitHub
+Pages publishes the root of `main`; the build itself sends nothing to GitHub.
+README links to the latest deployed version; local edits appear after deployment.
 
-Ключ ограничивает доступ к собранной библиотеке. Он не меняет безопасность BLE
-наушников и не защищает уже открытый модуль от обратного анализа.
+The key restricts access to the compiled library; it does not change headset BLE
+security or protect an unlocked module from reverse engineering.

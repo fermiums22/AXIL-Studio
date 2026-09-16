@@ -10,7 +10,7 @@ export function setupMicrophoneTest(root: HTMLElement, blocked: () => boolean) {
   route.className = 'microphone-route';
   const confirmedRoute = document.createElement('input');
   confirmedRoute.type = 'checkbox';
-  route.append(confirmedRoute, ' В настройках звука телефона выбраны AXIL для звонков и воспроизведения');
+  route.append(confirmedRoute, ' AXIL is selected for calls and playback in the phone audio settings');
   route.hidden = !android;
   status.after(route);
   let stream: MediaStream | undefined;
@@ -38,7 +38,7 @@ export function setupMicrophoneTest(root: HTMLElement, blocked: () => boolean) {
       url = undefined;
       audio.removeAttribute('src');
       playback.disabled = true;
-      status.textContent = 'Запись 5 секунд';
+      status.textContent = 'Recording for 5 seconds';
     }
   }
 
@@ -49,10 +49,10 @@ export function setupMicrophoneTest(root: HTMLElement, blocked: () => boolean) {
     const run = generation;
     busy = true;
     button.setAttribute('aria-pressed', 'true');
-    status.textContent = 'Подключение микрофона…';
+    status.textContent = 'Connecting microphone…';
     try {
-      if (!navigator.mediaDevices || typeof MediaRecorder === 'undefined') throw Error('Запись недоступна в этом браузере.');
-      if (android && !confirmedRoute.checked) throw Error('Выберите AXIL для звонков и воспроизведения в настройках Bluetooth телефона и отметьте это ниже.');
+      if (!navigator.mediaDevices || typeof MediaRecorder === 'undefined') throw Error('Recording is not available in this browser.');
+      if (android && !confirmedRoute.checked) throw Error('Select AXIL for calls and playback in your phone Bluetooth settings, then confirm below.');
       // Request permission before enumerating: labels and non-default devices
       // can be hidden until getUserMedia succeeds. Never record this probe.
       const permission = await navigator.mediaDevices.getUserMedia({audio: true, video: false});
@@ -66,23 +66,23 @@ export function setupMicrophoneTest(root: HTMLElement, blocked: () => boolean) {
       // Built-in/default microphones are never accepted as a fallback.
       if (!inputs.length && android && confirmedRoute.checked)
         inputs.push(...devices.filter(d => d.kind === 'audioinput' && /Bluetooth/i.test(d.label) && !['default', 'communications'].includes(d.deviceId)));
-      if (inputs.length !== 1) throw Error('Подключите AXIL для звонков в настройках Bluetooth и разрешите микрофон в настройках сайта. Должен быть доступен один микрофон AXIL.');
+      if (inputs.length !== 1) throw Error('Connect AXIL for calls in Bluetooth settings and allow microphone access in site settings. Exactly one AXIL microphone must be available.');
       const input = inputs[0];
       const outputs = devices.filter(d => d.kind === 'audiooutput' && isAxil(d));
       const output = outputs.find(d => input.groupId && d.groupId === input.groupId) ?? outputs.find(d => /Hands.Free/i.test(d.label)) ?? (outputs.length === 1 ? outputs[0] : undefined);
       outputId = output && typeof audio.setSinkId === 'function' ? output.deviceId : '';
-      if (!outputId && !android) throw Error('Браузер не позволяет выбрать выход AXIL. Используйте Chrome или Edge на компьютере.');
+      if (!outputId && !android) throw Error('This browser cannot select the AXIL output. Use Chrome or Edge on a computer.');
       const acquired = await navigator.mediaDevices.getUserMedia({audio: {deviceId: {exact: input.deviceId}}, video: false});
       if (run !== generation || blocked() || !busy) { acquired.getTracks().forEach(t => t.stop()); return; }
       stream = acquired;
       const track = acquired.getAudioTracks()[0];
       if (!track || (!/AXIL/i.test(track.label) && !(android && /Bluetooth/i.test(track.label))))
-        throw Error('Браузер не подтвердил микрофон гарнитуры. Проверьте подключение AXIL для звонков.');
+        throw Error('The browser did not confirm the headset microphone. Check the AXIL call connection.');
       const chunks: Blob[] = [];
       const current = new MediaRecorder(acquired);
       recorder = current;
       current.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
-      current.onerror = () => { if (run === generation) { stop(true); status.textContent = 'Ошибка записи. Проверьте подключение AXIL.'; } };
+      current.onerror = () => { if (run === generation) { stop(true); status.textContent = 'Recording failed. Check the AXIL connection.'; } };
       current.onstop = () => {
         acquired.getTracks().forEach(t => t.stop());
         if (run !== generation) return;
@@ -92,40 +92,40 @@ export function setupMicrophoneTest(root: HTMLElement, blocked: () => boolean) {
         busy = false;
         button.setAttribute('aria-pressed', 'false');
         const blob = new Blob(chunks, {type: current.mimeType});
-        if (!blob.size) { status.textContent = 'Запись пуста. Повторите тест.'; return; }
+        if (!blob.size) { status.textContent = 'The recording is empty. Repeat the test.'; return; }
         url = URL.createObjectURL(blob);
         audio.src = url;
         playback.disabled = false;
-        status.textContent = 'Запись готова';
+        status.textContent = 'Recording ready';
       };
       track.addEventListener('ended', () => {
-        if (run === generation && busy) { stop(true); status.textContent = 'Микрофон AXIL отключён.'; }
+        if (run === generation && busy) { stop(true); status.textContent = 'AXIL microphone disconnected.'; }
       });
       current.start();
-      status.textContent = 'Говорите · запись 5 секунд';
+      status.textContent = 'Speak · recording for 5 seconds';
       timer = window.setTimeout(() => stop(), 5000);
     } catch (error) {
       if (run !== generation) return;
       stop(true);
-      status.textContent = error instanceof Error ? error.message : 'Не удалось открыть микрофон AXIL.';
+      status.textContent = error instanceof Error ? error.message : 'Could not open the AXIL microphone.';
     }
   });
   playback.addEventListener('click', async () => {
     if (blocked() || !url || busy) return;
     const run = generation;
     try {
-      if (!audio.paused) { audio.pause(); status.textContent = 'Запись готова'; return; }
-      if (android && !confirmedRoute.checked) throw Error('AXIL не выбран');
+      if (!audio.paused) { audio.pause(); status.textContent = 'Recording ready'; return; }
+      if (android && !confirmedRoute.checked) throw Error('AXIL is not selected');
       if (outputId) await audio.setSinkId(outputId);
       if (run !== generation || blocked()) return;
       audio.currentTime = 0;
       await audio.play();
       if (run !== generation || blocked()) { audio.pause(); return; }
-      status.textContent = outputId ? 'Воспроизведение в AXIL' : 'Воспроизведение · выход выбран в настройках телефона';
-    } catch { if (run === generation) status.textContent = 'Не удалось включить выход AXIL. Проверьте подключение.'; }
+      status.textContent = outputId ? 'Playing through AXIL' : 'Playing · output selected in phone settings';
+    } catch { if (run === generation) status.textContent = 'Could not activate the AXIL output. Check the connection.'; }
   });
-  audio.onended = () => { status.textContent = 'Запись готова'; };
-  audio.onerror = () => { status.textContent = 'Ошибка воспроизведения. Повторите запись и проверьте выход AXIL.'; };
+  audio.onended = () => { status.textContent = 'Recording ready'; };
+  audio.onerror = () => { status.textContent = 'Playback failed. Record again and check the AXIL output.'; };
   window.addEventListener('pagehide', () => stop(true));
   confirmedRoute.addEventListener('change', () => stop(true));
   return {cancel: () => stop(true)};
