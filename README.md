@@ -18,7 +18,7 @@ BLE; an engineering UART console is also available on a computer. Values appear
 only after a headset reply. Unsupported functions are disabled.
 
 **Remote** contains HT, level/channel balance, music volume, call-microphone test,
-battery, Sleep, firmware selection and Update. **Console** has manual commands
+battery, Off, firmware selection and Update. **Console** has manual commands
 and a communication log. **+** opens descriptions/arguments; selection fills the
 input, sending is a separate action. During OTA the Console shows block requests,
 timings, phases and error codes. **Save console** downloads text for diagnostics:
@@ -68,8 +68,9 @@ Type plain commands such as `help`, `status` and `vol 10`; `!` is optional legac
 syntax and is not added by the command picker.
 
 **Reset** centers HT L/R at the greater current level. Balance affects HT only;
-music balance is controlled at the source. **Sleep** disconnects BLE; wake with the
-headset button. Active call/playback or another busy state may reject it.
+music balance is controlled at the source. **Off** requests normal shutdown,
+including while a phone is connected. Turn on again with the physical button.
+Update older firmware first to add the `off` command. OTA blocks shutdown.
 
 ## Local development
 

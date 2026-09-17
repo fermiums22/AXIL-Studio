@@ -187,7 +187,7 @@ function render(): void {
             <div class="meter-block"><span class="meter-label charging-label" id="charging-state" title="Charging: no data">Battery<svg id="charger-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M7 2v4m6-4v4M5 6h10v3a5 5 0 0 1-5 5v4M5 9h10"/></svg></span><div id="battery-meter" class="meter-rail battery" role="meter" aria-label="Battery level: no data" aria-valuemin="0" aria-valuemax="100"><span></span><svg id="battery-bolt" viewBox="0 0 16 28" aria-hidden="true" hidden><path d="M9 1 2 15h5l-1 12 8-16H9Z"/></svg></div><strong class="meter-reading" id="battery-reading">—</strong><span class="meter-unit" id="charge-description">No data</span></div>
           </div>
           <div class="device-actions">
-            <button class="button sleep-button" id="sleep" type="button" disabled><span aria-hidden="true">☾</span> Sleep</button>
+            <button class="button sleep-button" id="sleep" type="button" disabled><span aria-hidden="true">⏻</span> Off</button>
             <div class="update-controls">
               <h2 class="update-heading">Firmware update</h2>
               <label class="release-choice"><input id="use-release-firmware" type="checkbox" checked disabled /> Use release firmware 2.0.0</label>
@@ -391,7 +391,7 @@ function refresh(): void {
   element("#balance-note").hidden = !silentPair;
   text("#balance-note", "Both HT L/R levels are zero. Set a nonzero HT pair through the console: !balance L R.");
   disabled("#reset-balance", !(free && caps?.hearThroughBalance && balance !== undefined));
-  disabled("#sleep", !(free && caps?.sleep && level !== undefined));
+  disabled("#sleep", !(free && caps?.engineeringConsole));
 
   const battery = field("batteryPercent");
   const batteryMeter = element("#battery-meter");
@@ -833,7 +833,7 @@ function bindEvents(): void {
     const next = enabled ? mask | (1 << index) : mask & ~(1 << index);
     void command(current => current.setVoicePrompts(next), "", `${label}: ${enabled ? "voice prompt on" : "voice prompt off"}`);
   }));
-  element("#sleep").addEventListener("click", () => { void command(current => current.sleep(), "Sleep command confirmed. You may need to turn on the headset with its button before reconnecting.", "Sleep"); });
+  element("#sleep").addEventListener("click", () => { void command(current => current.sendEngineeringCommand("off"), "Power-off request accepted. Turn on the headset with its physical button before reconnecting.", "Off"); });
   element("#firmware-file").addEventListener("change", () => { void selectFirmware(); });
   element("#use-release-firmware").addEventListener("change", () => {
     if (!isDeviceRuntimeUnlocked() || state.updating || state.unlocking || state.fileLoading) return;
