@@ -697,10 +697,15 @@ function selectTab(tab: Tab): void {
   }
 }
 
+function consoleCommands() {
+  const values = Object.fromEntries(Object.entries(state.telemetry).filter(([key]) =>
+    connected() && performance.now() - (fieldTimes.get(key as keyof TelemetrySnapshot) ?? -Infinity) < 10000));
+  return getConsoleCommands(transport?.kind ?? "bluetooth", undefined, values);
+}
+
 function openCommandCatalog(): void {
-  const current = transport;
   if (state.updating) return;
-  const commands = getConsoleCommands(current?.kind ?? "bluetooth");
+  const commands = consoleCommands();
   if (!commands.length) return;
   const list = element("#command-list");
   list.replaceChildren();
@@ -875,7 +880,7 @@ function bindEvents(): void {
     if (!value || input.disabled) return;
     if (/^!?help$/i.test(value)) {
       log("Local command help · device support is checked after connection.");
-      for (const item of getConsoleCommands(transport?.kind ?? "bluetooth"))
+      for (const item of consoleCommands())
         log(`${item.syntax} — ${item.description}${item.parameters ? ` ${item.parameters}` : ""}`);
       return;
     }
