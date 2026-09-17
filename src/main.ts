@@ -178,9 +178,9 @@ function render(): void {
           <p class="balance-note" id="balance-note" hidden></p>
         </section>
         ${range("music-level", "Music level", 0, 16)}
-        <section class="microphone-test" aria-label="Call microphone test">
-          <div class="microphone-actions"><button class="button" id="microphone-toggle" type="button" aria-label="Record or stop the AXIL microphone test" aria-describedby="microphone-warning" aria-pressed="false">Record 5 seconds / stop</button><button class="button" id="microphone-play" type="button" disabled>Play / stop</button></div>
-          <p id="microphone-note" role="status">AXIL call microphone test</p>
+        <section class="microphone-test" aria-label="Microphone test">
+          <div class="microphone-actions"><button class="button" id="microphone-toggle" type="button" aria-label="Record or stop the microphone test" aria-describedby="microphone-warning" aria-pressed="false">Record 5 seconds / stop</button><button class="button" id="microphone-play" type="button" disabled>Play / stop</button></div>
+          <p id="microphone-note" role="status">Test the microphone selected in your system settings</p>
         </section>
         <section class="lower-controls" aria-label="Levels and update">
           <div class="meters">
@@ -199,7 +199,7 @@ function render(): void {
             </div>
           </div>
         </section>
-        <p class="capability-note" id="microphone-warning">Connect AXIL for calls in your OS Bluetooth settings and allow microphone access for this site. The recording stays in your browser. Music may pause during the test.</p>
+        <p class="capability-note" id="microphone-warning">Works with Bluetooth, wired, USB and built-in microphones. Select the input and playback output in your system or browser settings. Allow microphone access; recordings stay in this browser. No headset control connection is required.</p>
         <p class="capability-note" id="capability-note"></p>
       </section>
       <section class="equalizer-panel" id="equalizer-panel" role="tabpanel" aria-labelledby="equalizer-tab" hidden>
@@ -216,7 +216,7 @@ function render(): void {
         <div class="console-heading"><h1>Console</h1><button class="text-button" id="save-console" type="button" title="Save up to 5000 lines to a text file" disabled>Save console</button><button class="text-button" id="clear-console" type="button">Clear</button></div>
         <p class="console-hint" id="console-hint">Connect the headset to send commands.</p>
         <div id="console-output" class="console-output" role="log" aria-label="Headset console" aria-live="off"><p class="console-empty">Device replies will appear here.</p></div>
-        <form id="console-form"><div class="command-row"><button class="button command-picker-toggle" id="open-commands" type="button" aria-label="Choose command" title="Command list" aria-haspopup="dialog" aria-controls="command-dialog" disabled>+</button><label class="visually-hidden" for="console-command">Command</label><input id="console-command" autocomplete="off" spellcheck="false" placeholder="!status" aria-describedby="selected-command-hint" maxlength="160" disabled /><button class="button" id="send-command" type="submit" disabled>Send</button></div><p class="console-hint command-hint" id="selected-command-hint" hidden></p></form>
+        <form id="console-form"><div class="command-row"><button class="button command-picker-toggle" id="open-commands" type="button" aria-label="Choose command" title="Command list" aria-haspopup="dialog" aria-controls="command-dialog" disabled>+</button><label class="visually-hidden" for="console-command">Command</label><input id="console-command" autocomplete="off" spellcheck="false" placeholder="help" aria-describedby="selected-command-hint" maxlength="160" disabled /><button class="button" id="send-command" type="submit" disabled>Send</button></div><p class="console-hint command-hint" id="selected-command-hint" hidden></p></form>
       </section>
     </main>
     <dialog class="command-dialog" id="command-dialog" aria-labelledby="command-dialog-title"><div class="command-dialog-heading"><h2 id="command-dialog-title">Commands</h2><button class="text-button" id="close-commands" type="button" aria-label="Close command list">×</button></div><p class="console-hint">Select a command to fill the input. Press Send to execute it.</p><div class="command-list" id="command-list"></div></dialog>
@@ -417,13 +417,12 @@ function refresh(): void {
     element("#sensor-left").setAttribute("aria-label", "L: no sensor data");
     element("#sensor-right").setAttribute("aria-label", "R: no sensor data");
   }
-  const consoleReady = !!(free && caps?.engineeringConsole);
-  disabled("#console-command", !consoleReady);
-  disabled("#send-command", !consoleReady);
-  const catalogAvailable = consoleReady && transport && getConsoleCommands(transport.kind, caps).some(item => item.available);
+  disabled("#console-command", state.updating);
+  disabled("#send-command", state.updating);
+  const catalogAvailable = !state.updating;
   disabled("#open-commands", !catalogAvailable);
   if (!catalogAvailable) element<HTMLDialogElement>("#command-dialog").close();
-  text("#console-hint", state.updating ? "Commands are paused during OTA." : !active ? "Connect the headset to send commands." : !caps?.engineeringConsole ? "This firmware does not support the console over this connection." : "Commands are sent to the device. Examples: !help, !status.");
+  text("#console-hint", state.updating ? "Commands are paused during OTA." : !active ? "Type help or press + to browse commands offline. Device commands require a headset connection." : !caps?.engineeringConsole ? "Local help is available. This firmware does not support device console commands." : "Type help for local command help. Device commands are sent to the headset.");
   disabled("#firmware-file", !unlocked || state.updating || state.fileLoading);
   disabled("#use-release-firmware", !unlocked || state.updating || state.unlocking || state.fileLoading);
   element(".file-button").classList.toggle("disabled", !unlocked || state.updating || state.fileLoading);
@@ -700,8 +699,8 @@ function selectTab(tab: Tab): void {
 
 function openCommandCatalog(): void {
   const current = transport;
-  if (!current || !connected() || state.busy || state.updating || !current.capabilities.engineeringConsole) return;
-  const commands = getConsoleCommands(current.kind, current.capabilities).filter(item => item.available);
+  if (state.updating) return;
+  const commands = getConsoleCommands(current?.kind ?? "bluetooth");
   if (!commands.length) return;
   const list = element("#command-list");
   list.replaceChildren();
@@ -724,7 +723,7 @@ function openCommandCatalog(): void {
       button.append(parameters);
     }
     button.addEventListener("click", () => {
-      if (transport !== current || !connected() || state.busy || state.updating || !current.capabilities.engineeringConsole) return;
+      if (state.updating) return;
       const input = element<HTMLInputElement>("#console-command");
       input.value = item.command;
       selectedCommandName = item.command.trim().split(/\s+/)[0];
@@ -874,6 +873,13 @@ function bindEvents(): void {
     const input = element<HTMLInputElement>("#console-command");
     const value = input.value.trim();
     if (!value || input.disabled) return;
+    if (/^!?help$/i.test(value)) {
+      log("Local command help · device support is checked after connection.");
+      for (const item of getConsoleCommands(transport?.kind ?? "bluetooth"))
+        log(`${item.syntax} — ${item.description}${item.parameters ? ` ${item.parameters}` : ""}`);
+      return;
+    }
+    if (!connected()) { log("Not sent: connect a headset first.", "!"); return; }
     void command(current => current.sendEngineeringCommand(value));
   });
 }

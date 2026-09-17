@@ -52,16 +52,18 @@ Old stock firmware may support OTA/basic functions without new telemetry. Missin
 capabilities do not block first OTA. Actual installed-binary compatibility needs
 hardware verification.
 
-**Microphone test** records five seconds through OS AXIL call input; pressing again
-stops early. **Play / stop** plays through AXIL. No real call is initiated; recording
-stays in page memory. Normal Bluetooth call connection and microphone permission
-are required; permission is requested before device discovery. On Android choose
-AXIL for calls/playback in phone settings and confirm below the buttons. If input
-is labeled simply Bluetooth, that input is used after confirmation. Without browser
-output selection, playback follows the phone system output; the site cannot verify
-the route. Never substitute built-in phone/PC microphone. Recording does not start
-if AXIL/Bluetooth input is unavailable. Desktop requires AXIL output selection
-(Chrome/Edge). BLE alone is insufficient; music may pause.
+**Microphone test** records five seconds from the microphone selected in OS/browser
+settings: Bluetooth, wired, USB or built-in. It works without a headset control
+connection or Studio password. Allow microphone access; the recording shows the
+input track name reported by the browser. Press again to stop early. **Play / stop**
+uses the system-selected output. Recording stays in page memory; no call is initiated.
+Select the desired input/output in system or browser settings. Phone routing depends
+on the OS/browser and must be checked on the actual device; a label is not proof of
+the physical route. OTA cancels recording/playback and releases tracks.
+
+Console **help** / **!help** and the **+** command catalogue also work offline,
+without the password. Other commands require a connected, supported headset and
+are rejected rather than queued while offline.
 
 **Reset** centers HT L/R at the greater current level. Balance affects HT only;
 music balance is controlled at the source. **Sleep** disconnects BLE; wake with the

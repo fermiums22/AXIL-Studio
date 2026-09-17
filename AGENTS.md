@@ -27,6 +27,10 @@ release/file/update controls into the battery column. Keep touch targets at leas
   successful validation. Missing/denied Credential Management API must not block access.
 - Query capabilities; application version 2.0.0 is not a feature test. Legacy OTA
   works without new capabilities.
+- Local help/!help and command browsing work without a connection or password.
+  Never queue offline device commands. Microphone recording uses any OS/browser
+  input (including non-AXIL or built-in) and system playback output; it is independent
+  of BLE. Show the track label and preserve cancellation/resource cleanup during OTA.
 - Block controls/polling during OTA. Preserve numeric device error codes; show
   phases/diagnostics in the normal Console and support local text export. Never log
   passwords/image contents. Waiting for a block is not final validation. Repeated
