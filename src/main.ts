@@ -189,6 +189,7 @@ function render(): void {
           <div class="device-actions">
             <button class="button sleep-button" id="sleep" type="button" disabled><span aria-hidden="true">☾</span> Sleep</button>
             <div class="update-controls">
+              <h2 class="update-heading">Firmware update</h2>
               <label class="release-choice"><input id="use-release-firmware" type="checkbox" checked disabled /> Use release firmware 2.0.0</label>
               <label class="file-button" for="firmware-file">Choose firmware <span aria-hidden="true">＋</span></label>
               <input class="visually-hidden" id="firmware-file" type="file" accept=".bin" />

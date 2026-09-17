@@ -4,6 +4,10 @@ Public headset configuration UI, primarily for phones. Preserve the dark theme
 with green accents. L/R touches and joystick-center presses use a smoothly fading
 orange gradient; charging shows a lightning bolt inside the battery. Preserve these
 states and narrow-screen responsiveness. Keep docs, notes, comments and UI in English.
+Bottom tabs stay fixed at the viewport edge, with matching content clearance and
+safe-area padding. The firmware update card spans the content width; do not squeeze
+release/file/update controls into the battery column. Keep touch targets at least
+44 px in that card and check all tabs while scrolling on narrow/short viewports.
 
 - Only the page, UI sources and compiled communication library belong here.
   Protocol/BLE/OTA sources and source maps stay private. Never add SDKs, firmware
