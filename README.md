@@ -64,6 +64,8 @@ the physical route. OTA cancels recording/playback and releases tracks.
 Console **help** / **!help** and the **+** command catalogue also work offline,
 without the password. Other commands require a connected, supported headset and
 are rejected rather than queued while offline.
+Type plain commands such as `help`, `status` and `vol 10`; `!` is optional legacy
+syntax and is not added by the command picker.
 
 **Reset** centers HT L/R at the greater current level. Balance affects HT only;
 music balance is controlled at the source. **Sleep** disconnects BLE; wake with the
