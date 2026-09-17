@@ -1,5 +1,6 @@
 import "./styles.css";
 import { setupMicrophoneTest } from "./microphone-test";
+import { unlockReleasedFirmware, getReleasedFirmware } from "./firmware-download";
 import { WebBluetoothTransport, getConsoleCommands, isDeviceRuntimeUnlocked, unlockDeviceRuntime } from "./transports";
 import { OTA_IMAGE_MAX_SIZE, validateOtaImage } from "./ota";
 import type { AxilTransport, OtaProgress, TelemetrySnapshot, TransportEvent } from "./types";
@@ -188,6 +189,7 @@ function render(): void {
           <div class="device-actions">
             <button class="button sleep-button" id="sleep" type="button" disabled><span aria-hidden="true">☾</span> Sleep</button>
             <div class="update-controls">
+              <label class="release-choice"><input id="use-release-firmware" type="checkbox" checked disabled /> Use release firmware 2.0.0</label>
               <label class="file-button" for="firmware-file">Choose firmware <span aria-hidden="true">＋</span></label>
               <input class="visually-hidden" id="firmware-file" type="file" accept=".bin" />
               <p class="file-name">No file selected</p>
@@ -422,6 +424,7 @@ function refresh(): void {
   if (!catalogAvailable) element<HTMLDialogElement>("#command-dialog").close();
   text("#console-hint", state.updating ? "Commands are paused during OTA." : !active ? "Connect the headset to send commands." : !caps?.engineeringConsole ? "This firmware does not support the console over this connection." : "Commands are sent to the device. Examples: !help, !status.");
   disabled("#firmware-file", !unlocked || state.updating || state.fileLoading);
+  disabled("#use-release-firmware", !unlocked || state.updating || state.unlocking || state.fileLoading);
   element(".file-button").classList.toggle("disabled", !unlocked || state.updating || state.fileLoading);
   disabled("#update-firmware", !(free && caps?.ota && firmwareBytes && !state.fileLoading) || state.otaStatus === "complete");
   const update = element("#update-firmware");
@@ -551,11 +554,41 @@ async function command(operation: (current: AxilTransport) => Promise<void>, suc
   }
 }
 
+async function selectReleasedFirmware(): Promise<void> {
+  const selection = ++fileSelection;
+  resetOtaProgress();
+  firmwareBytes = undefined;
+  state.file = null;
+  state.fileLoading = true;
+  refresh();
+  try {
+    const file = getReleasedFirmware();
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    validateOtaImage(bytes);
+    if (selection !== fileSelection) return;
+    state.file = file;
+    firmwareBytes = bytes;
+    text(".file-name", `${file.name} · ${(file.size / 1024).toFixed(0)} KiB`);
+    element(".file-name").title = file.name;
+    log(`OTA: verified release selected, ${bytes.length} bytes.`);
+  } catch (error) {
+    if (selection === fileSelection) {
+      text(".file-name", "Release unavailable");
+      message(error instanceof Error ? error.message : "Could not select release firmware.", true);
+    }
+  } finally {
+    if (selection === fileSelection) state.fileLoading = false;
+    refresh();
+  }
+}
+
 async function selectFirmware(): Promise<void> {
   if (!isDeviceRuntimeUnlocked() || state.updating) return;
   resetOtaProgress();
   const selection = ++fileSelection;
   const file = element<HTMLInputElement>("#firmware-file").files?.item(0) ?? null;
+  if (!file) return;
+  element<HTMLInputElement>("#use-release-firmware").checked = false;
   // A new build often has the same filename. Allow selecting it again.
   element<HTMLInputElement>("#firmware-file").value = "";
   state.file = file;
@@ -730,7 +763,8 @@ function bindEvents(): void {
     state.unlocking = true;
     message("");
     refresh();
-    void unlockDeviceRuntime(key).then(() => {
+    void unlockReleasedFirmware(key).then(() => unlockDeviceRuntime(key)).then(async () => {
+      if (element<HTMLInputElement>("#use-release-firmware").checked) await selectReleasedFirmware();
       offerPasswordSave(element<HTMLFormElement>("#unlock-form"));
       message("Access unlocked. You can connect the headset.");
     }).catch((error: unknown) => {
@@ -796,6 +830,19 @@ function bindEvents(): void {
   }));
   element("#sleep").addEventListener("click", () => { void command(current => current.sleep(), "Sleep command confirmed. You may need to turn on the headset with its button before reconnecting.", "Sleep"); });
   element("#firmware-file").addEventListener("change", () => { void selectFirmware(); });
+  element("#use-release-firmware").addEventListener("change", () => {
+    if (!isDeviceRuntimeUnlocked() || state.updating || state.unlocking || state.fileLoading) return;
+    if (element<HTMLInputElement>("#use-release-firmware").checked) void selectReleasedFirmware();
+    else {
+      ++fileSelection;
+      firmwareBytes = undefined;
+      state.file = null;
+      resetOtaProgress();
+      text(".file-name", "No file selected");
+      element(".file-name").title = "";
+      refresh();
+    }
+  });
   element("#update-firmware").addEventListener("click", () => { void updateFirmware(); });
   element("#cancel-update").addEventListener("click", () => { log("OTA: cancellation requested."); otaAbort?.abort(); message("Cancelling OTA. Do not assume the image is installed until you check the firmware version."); });
   element("#save-console").addEventListener("click", saveConsole);

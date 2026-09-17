@@ -9,6 +9,10 @@ states and narrow-screen responsiveness. Keep docs, notes, comments and UI in En
   Protocol/BLE/OTA sources and source maps stay private. Never add SDKs, firmware
   sources, actual images, dumps, device logs, private documents, keys, tokens,
   passwords or developer absolute paths.
+  Exception explicitly authorized by Viktor: `src/released-firmware.json` contains
+  the approved OTA binary encrypted with the Studio password. It may be embedded in
+  standalone HTML. No plaintext image or password may be committed. Generate it only
+  through the private build; check decrypted release size/SHA-256 before delivery.
 - The UI uses the compiled library. Show only confirmed values; identify unsupported
   or stale data. Never claim a command, microphone measurement or update succeeded
   without a device response.

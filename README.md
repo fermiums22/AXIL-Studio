@@ -1,5 +1,16 @@
 # AXIL Studio
 
+## Release firmware
+
+Enter the Studio password. **Use release firmware 2.0.0** is checked by default,
+so the approved image is ready for OTA after decryption and size/SHA-256/container
+checks. No download or file selection is required. **Choose firmware** selects a
+custom `.bin` and unchecks the release option. Check it again to restore the release.
+The selected image remains available across headset connections for batch updates.
+After reloading, unlock again; the release is selected by default. The public page
+contains only encrypted firmware. Never commit the password or a plaintext image.
+
+
 **[Open AXIL Studio](https://fermiums22.github.io/AXIL-Studio/)**
 
 Dark-themed headset settings page, designed primarily for phones. Connects over

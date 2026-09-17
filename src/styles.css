@@ -188,3 +188,5 @@ input[type="range"]:disabled::-moz-range-thumb { border-color: #647369; }
 .microphone-route:not([hidden]) { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; font-size: 11px; line-height: 1.5; color: var(--muted); }
 .microphone-route input { flex-shrink: 0; width: 18px; height: 18px; margin: 0; }
 .meters { grid-template-columns: 1fr; }
+.release-choice { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.5; }
+.release-choice input { flex: 0 0 auto; margin-top: 3px; accent-color: #68dca2; }
