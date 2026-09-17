@@ -187,7 +187,7 @@ function render(): void {
             <div class="meter-block"><span class="meter-label charging-label" id="charging-state" title="Charging: no data">Battery<svg id="charger-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M7 2v4m6-4v4M5 6h10v3a5 5 0 0 1-5 5v4M5 9h10"/></svg></span><div id="battery-meter" class="meter-rail battery" role="meter" aria-label="Battery level: no data" aria-valuemin="0" aria-valuemax="100"><span></span><svg id="battery-bolt" viewBox="0 0 16 28" aria-hidden="true" hidden><path d="M9 1 2 15h5l-1 12 8-16H9Z"/></svg></div><strong class="meter-reading" id="battery-reading">—</strong><span class="meter-unit" id="charge-description">No data</span></div>
           </div>
           <div class="device-actions">
-            <button class="button sleep-button" id="sleep" type="button" disabled><span aria-hidden="true">⏻</span> Off</button>
+            <button class="button sleep-button" id="sleep" type="button" disabled><svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v9M6.35 5.65a8 8 0 1 0 11.3 0"/></svg> Off</button>
             <div class="update-controls">
               <h2 class="update-heading">Firmware update</h2>
               <label class="release-choice"><input id="use-release-firmware" type="checkbox" checked disabled /> Use release firmware 2.0.0</label>

@@ -129,7 +129,7 @@ input[type="range"]:disabled::-moz-range-thumb { border-color: #647369; }
 .device-actions { display: contents; }
 .button, .file-button { display: flex; width: 100%; min-height: 44px; padding: 10px 12px; align-items: center; justify-content: center; gap: 8px; border: 1px solid #414d45; border-radius: 4px; color: #dce7df; background: var(--surface); font-size: 12px; }
 .button:disabled { color: #76837a; background: #202622; border-color: #343e37; }
-.sleep-button span { font-size: 17px; line-height: 1; }
+.sleep-button svg { display: block; flex: 0 0 18px; }
 .update-controls { grid-column: 1 / -1; display: grid; gap: 12px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 8px; }
 .update-heading { margin: 0; font-size: 14px; font-weight: 600; }
 .file-button { justify-content: space-between; font-size: 12px; cursor: pointer; }
