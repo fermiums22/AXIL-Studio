@@ -25,7 +25,7 @@ release/file/update controls into the battery column. Keep touch targets at leas
   do not add library sources or open WASM. The password form supports the browser
   manager through stable username/current-password fields; offer saving only after
   successful validation. Missing/denied Credential Management API must not block access.
-- Query capabilities; application version 2.0.0 is not a feature test. Legacy OTA
+- Query capabilities; application version 2.0.1 is not a feature test. Legacy OTA
   works without new capabilities.
 - Local help/!help and command browsing work without a connection or password.
   Never queue offline device commands. Microphone recording uses any OS/browser

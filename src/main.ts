@@ -190,7 +190,7 @@ function render(): void {
             <button class="button sleep-button" id="sleep" type="button" disabled><svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v9M6.35 5.65a8 8 0 1 0 11.3 0"/></svg> Off</button>
             <div class="update-controls">
               <h2 class="update-heading">Firmware update</h2>
-              <label class="release-choice"><input id="use-release-firmware" type="checkbox" checked disabled /> Use release firmware 2.0.0</label>
+              <label class="release-choice"><input id="use-release-firmware" type="checkbox" checked disabled /> Use release firmware 2.0.1</label>
               <label class="file-button" for="firmware-file">Choose firmware <span aria-hidden="true">＋</span></label>
               <input class="visually-hidden" id="firmware-file" type="file" accept=".bin" />
               <p class="file-name">No file selected</p>
